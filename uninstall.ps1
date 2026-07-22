@@ -34,7 +34,8 @@ function Get-WatcherState {
     try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$wp" -ErrorAction Stop).CommandLine }
     catch { $cimOk = $false }
     if (-not $cimOk -or $null -eq $cmd) { return @{ State = 'unknown'; Pid = $wp } }
-    if (($cmd -match 'clipwarp-watch\.ps1') -and ($cmd -match '(^|\s)-Daemon(\s|$)')) { return @{ State = 'watcher'; Pid = $wp } }
+    $selfEsc = [regex]::Escape($watchScript)
+    if (($cmd -match $selfEsc) -and ($cmd -match '(^|\s)-Daemon(\s|$)')) { return @{ State = 'watcher'; Pid = $wp } }
     return @{ State = 'foreign'; Pid = $wp }
 }
 
@@ -71,18 +72,33 @@ $profilePaths = $profilePaths | Select-Object -Unique
 
 foreach ($profilePath in $profilePaths) {
     if (-not (Test-Path -LiteralPath $profilePath)) { continue }
+    $tmp = "$profilePath.clipwarp.tmp"
     try {
-        $lines = Get-Content -LiteralPath $profilePath -ErrorAction Stop
-        $kept = @(); $skip = $false
-        foreach ($line in $lines) {
-            if ($line -match '^\s*# >>> clipwarp') { $skip = $true; continue }
-            if ($skip -and $line -match '^\s*# <<< clipwarp') { $skip = $false; continue }
-            if (-not $skip) { $kept += $line }
+        $lines = @(Get-Content -LiteralPath $profilePath -ErrorAction Stop)
+        # Require a COMPLETE start/end marker pair before mutating anything - never
+        # delete from the start marker to EOF if the closing marker is missing.
+        $startIdx = -1; $endIdx = -1
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($startIdx -lt 0 -and $lines[$i] -match '^\s*# >>> clipwarp') { $startIdx = $i; continue }
+            if ($startIdx -ge 0 -and $lines[$i] -match '^\s*# <<< clipwarp') { $endIdx = $i; break }
         }
-        Set-Content -LiteralPath $profilePath -Value $kept -Encoding UTF8 -ErrorAction Stop
+        if ($startIdx -lt 0) { continue }                       # no clipwarp block here
+        if ($endIdx -lt 0) {
+            $problems += "profile ${profilePath} has an unterminated clipwarp block - left untouched (remove it by hand)"
+            continue
+        }
+        $kept = @()
+        if ($startIdx -gt 0)               { $kept += $lines[0..($startIdx - 1)] }
+        if ($endIdx -lt ($lines.Count - 1)) { $kept += $lines[($endIdx + 1)..($lines.Count - 1)] }
+        # Write a same-directory temp preserving encoding, then atomically replace.
+        Set-Content -LiteralPath $tmp -Value $kept -Encoding UTF8 -ErrorAction Stop
+        Move-Item -LiteralPath $tmp -Destination $profilePath -Force -ErrorAction Stop
         Write-Host "removed clipwarp function from $profilePath" -ForegroundColor Green
     }
-    catch { $problems += "edit profile ${profilePath}: $($_.Exception.Message)" }
+    catch {
+        $problems += "edit profile ${profilePath}: $($_.Exception.Message)"
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # 4. Optionally purge saved images.

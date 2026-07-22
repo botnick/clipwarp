@@ -137,7 +137,7 @@ the clipboard sequence number, so a slow conversion never overwrites a newer cop
 
 - **100% local.** The image is written to `%USERPROFILE%\.claude\pasted-images` and
   only its path is put on your clipboard. Nothing touches the network.
-- **Auto-cleanup.** Saved PNGs older than **7 days are deleted automatically**, so the
+- **Auto-cleanup.** Saved images older than **7 days are deleted automatically**, so the
   folder never grows unbounded and won't clutter your machine.
 
 ## Scripting

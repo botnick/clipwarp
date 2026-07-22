@@ -57,7 +57,8 @@ function Get-WatchState {
     try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$watchPid" -ErrorAction Stop).CommandLine }
     catch { $cimOk = $false }
     if (-not $cimOk -or $null -eq $cmd) { return @{ State = 'unknown'; Pid = $watchPid } }
-    if (($cmd -match 'clipwarp-watch\.ps1') -and ($cmd -match '(^|\s)-Daemon(\s|$)')) { return @{ State = 'watcher'; Pid = $watchPid } }
+    $selfEsc = [regex]::Escape($PSCommandPath)
+    if (($cmd -match $selfEsc) -and ($cmd -match '(^|\s)-Daemon(\s|$)')) { return @{ State = 'watcher'; Pid = $watchPid } }
     return @{ State = 'foreign'; Pid = $watchPid }
 }
 
@@ -79,7 +80,10 @@ if ($Autostart) {
 }
 
 if ($NoAutostart) {
-    Remove-Item -LiteralPath $startupLnk -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $startupLnk) {
+        try { Remove-Item -LiteralPath $startupLnk -Force -ErrorAction Stop }
+        catch { Write-Host "clipwarp watch: failed to remove autostart shortcut - $($_.Exception.Message)" -ForegroundColor Red; exit 1 }
+    }
     Write-Host 'clipwarp watch: autostart disabled' -ForegroundColor Green
     exit 0
 }
@@ -174,6 +178,7 @@ namespace ClipwarpWatch
 
         private const int WM_CLIPBOARDUPDATE = 0x031D;
         private static readonly Regex ImgExt = new Regex(@"\.(png|jpe?g|gif|webp|bmp)$", RegexOptions.IgnoreCase);
+        private static readonly Regex HtmlFileUri = new Regex(@"file:///[^""'\s>]+\.(png|jpe?g|gif|webp|bmp)", RegexOptions.IgnoreCase);
 
         private readonly string scriptPath;
         private readonly string logPath;
@@ -182,6 +187,7 @@ namespace ClipwarpWatch
         private DateTime childStarted;
         private const int ChildTimeoutSec = 15;   // a conversion that runs longer is treated as hung
         private int busyRetries;                  // consecutive "clipboard busy" re-arms in this burst
+        private int convFails;                    // consecutive failed conversions of the current clipboard
 
         // Re-check soon instead of dropping the event (clipboard was busy, or a
         // conversion is still running). Bounded so a permanently-locked clipboard
@@ -200,7 +206,8 @@ namespace ClipwarpWatch
             CreateParams cp = new CreateParams();
             cp.Parent = (IntPtr)(-3);              // HWND_MESSAGE: message-only window
             CreateHandle(cp);
-            AddClipboardFormatListener(this.Handle);
+            if (!AddClipboardFormatListener(this.Handle))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "AddClipboardFormatListener failed");
             debounce = new Timer();
             debounce.Interval = 300;               // coalesce the bursts some apps fire per copy
             debounce.Tick += OnTick;
@@ -214,6 +221,7 @@ namespace ClipwarpWatch
                 // A genuinely new clipboard change: give it a full, fresh retry
                 // budget (don't inherit a previous burst's exhausted counter).
                 busyRetries = 0;
+                convFails = 0;
                 debounce.Interval = 300;
                 debounce.Stop();
                 debounce.Start();
@@ -225,26 +233,45 @@ namespace ClipwarpWatch
         {
             debounce.Stop();
             try { Inspect(); }
-            catch (Exception ex) { Log("error: " + ex.Message); }
+            catch (Exception ex) { Log("error: " + ex.Message); debounce.Interval = 500; debounce.Start(); }  // don't wedge on a launch/read exception
         }
 
         private void Inspect()
         {
-            // A conversion is already in flight - unless it has hung past the
-            // timeout, in which case reap it so the watcher never wedges.
-            if (child != null && !child.HasExited)
+            // Observe any conversion child: keep polling while it runs, reap it if
+            // it hangs, and inspect its exit code when it finishes so a failed or
+            // hung conversion is retried a bounded number of times (never forever).
+            if (child != null)
             {
-                if ((DateTime.Now - childStarted).TotalSeconds < ChildTimeoutSec)
+                if (!child.HasExited)
                 {
-                    // Waiting on the in-flight conversion is NOT the clipboard-busy
-                    // budget: poll on the base interval until the child finishes
-                    // (bounded by ChildTimeoutSec, after which it is killed above).
-                    debounce.Interval = 300;
-                    debounce.Start();
-                    return;
+                    if ((DateTime.Now - childStarted).TotalSeconds < ChildTimeoutSec)
+                    {
+                        debounce.Interval = 300;   // watchdog poll until it finishes/hangs
+                        debounce.Start();
+                        return;
+                    }
+                    try { child.Kill(); child.WaitForExit(1000); } catch { }
+                    Log("previous conversion hung -> killed");
+                    convFails++;
                 }
-                try { child.Kill(); } catch { }
-                Log("previous conversion hung -> killed");
+                else
+                {
+                    int code = -1;
+                    try { code = child.ExitCode; } catch { }
+                    if (code == 0) { convFails = 0; }
+                    else { convFails++; Log("conversion exited with code " + code); }
+                }
+                try { child.Dispose(); } catch { }
+                child = null;
+            }
+
+            // If the current clipboard keeps failing to convert, stop relaunching
+            // until a new copy arrives (WM_CLIPBOARDUPDATE resets convFails).
+            if (convFails >= 3)
+            {
+                if (convFails == 3) { convFails++; Log("conversion failing repeatedly - waiting for a new clipboard copy"); }
+                return;
             }
 
             string txt = null;
@@ -261,7 +288,7 @@ namespace ClipwarpWatch
             if (payload < 0) { Rearm(); return; }              // clipboard busy -> retry soon
             if (payload == 0) { busyRetries = 0; debounce.Interval = 300; return; }
 
-            busyRetries = 0; debounce.Interval = 300;
+            debounce.Interval = 300;
             var psi = new System.Diagnostics.ProcessStartInfo();
             psi.FileName = "powershell.exe";
             psi.Arguments = "-NoProfile -Sta -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + scriptPath + "\" -Quiet -KeepImage";
@@ -269,6 +296,11 @@ namespace ClipwarpWatch
             psi.UseShellExecute = false;
             child = System.Diagnostics.Process.Start(psi);
             childStarted = DateTime.Now;
+            // Arm the watchdog: re-enter Inspect on the timer so a hung child is
+            // reaped after ChildTimeoutSec even if no further clipboard event ever
+            // fires (a child that hangs before writing produces no WM_CLIPBOARDUPDATE).
+            debounce.Interval = 300;
+            debounce.Start();
             Log("image on clipboard -> converting");
         }
 
@@ -294,7 +326,7 @@ namespace ClipwarpWatch
                 if (d.GetDataPresent(DataFormats.Html))
                 {
                     string html = d.GetData(DataFormats.Html) as string;
-                    if (html != null && html.IndexOf("data:image/", StringComparison.OrdinalIgnoreCase) >= 0) return 1;
+                    if (html != null && (html.IndexOf("data:image/", StringComparison.OrdinalIgnoreCase) >= 0 || HtmlFileUri.IsMatch(html))) return 1;
                 }
             }
             catch { return -1; }   // read raced with another writer; retry

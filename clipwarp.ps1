@@ -167,9 +167,7 @@ public static byte[] DecodeMasked(byte[] dib, int srcOff, int w, int absH, int s
                 $do.SetData([System.Windows.Forms.DataFormats]::UnicodeText, $Path)
                 if ($PngBytes) {
                     $do.SetData('PNG', (New-Object System.IO.MemoryStream (,$PngBytes)))
-                    if (-not $Img) {
-                        try { $Img = [System.Drawing.Image]::FromStream((New-Object System.IO.MemoryStream (,$PngBytes))) } catch {}
-                    }
+                    if (-not $Img) { $Img = New-ImageFromBytes $PngBytes }
                 }
                 if ($Img) { $do.SetImage($Img) }
                 if ($DropFile) {
@@ -195,6 +193,20 @@ public static byte[] DecodeMasked(byte[] dib, int srcOff, int w, int absH, int s
         Join-Path $OutDir ('clip-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.png')
     }
 
+    # Load an image from bytes into an INDEPENDENT Bitmap. Image.FromStream keeps a
+    # reference to the stream for the image's lifetime, so an anonymous MemoryStream
+    # would be GC-collectable and later Save/SetImage could fail; clone into a new
+    # Bitmap and dispose the source + stream immediately (returns $null on failure).
+    function New-ImageFromBytes {
+        param([byte[]]$Bytes)
+        $ms = New-Object System.IO.MemoryStream (,$Bytes)
+        try {
+            $src = [System.Drawing.Image]::FromStream($ms)
+            try { return (New-Object System.Drawing.Bitmap $src) } finally { $src.Dispose() }
+        } catch { return $null }
+        finally { $ms.Dispose() }
+    }
+
     # Claude Code attaches png/jpg/jpeg/gif/webp but NOT bmp, so transcode a
     # .bmp source file to PNG. Returns the new PNG path (via -out ref-like object)
     # or $null on failure. Reads through a byte[] so the source file isn't locked.
@@ -202,7 +214,8 @@ public static byte[] DecodeMasked(byte[] dib, int srcOff, int w, int absH, int s
         param([string]$SrcFile)
         try {
             $bytes = [System.IO.File]::ReadAllBytes($SrcFile)
-            $im = [System.Drawing.Image]::FromStream((New-Object System.IO.MemoryStream (,$bytes)))
+            $im = New-ImageFromBytes $bytes
+            if (-not $im) { return $null }
             $path = New-OutPath
             $im.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
             return @{ Path = $path; Img = $im }
@@ -223,15 +236,16 @@ public static byte[] DecodeMasked(byte[] dib, int srcOff, int w, int absH, int s
     $data = Invoke-Retry { [System.Windows.Forms.Clipboard]::GetDataObject() }
 
     # --- 1. A real image FILE on the clipboard (Ctrl+C on a .png in Explorer) ---
-    if (Invoke-Retry { [System.Windows.Forms.Clipboard]::ContainsFileDropList() }) {
-        foreach ($f in [System.Windows.Forms.Clipboard]::GetFileDropList()) {
-            if ($f -match '\.(png|jpe?g|gif|webp)$') {
+    $dropList = Invoke-Retry { [System.Windows.Forms.Clipboard]::GetFileDropList() }
+    if ($dropList) {
+        foreach ($f in $dropList) {
+            if ($f -match '\.(png|jpe?g|gif|webp)$' -and (Test-Path -LiteralPath $f -PathType Leaf)) {
                 Publish-Result -Path $f -DropFile $f
                 $out.Path = $f
                 $out.Kind = 'file'
                 return $out
             }
-            if ($f -match '\.bmp$') {
+            if ($f -match '\.bmp$' -and (Test-Path -LiteralPath $f -PathType Leaf)) {
                 $c = ConvertTo-PngFile $f
                 if ($c) {
                     Publish-Result -Path $c.Path -Img $c.Img
@@ -395,7 +409,8 @@ public static byte[] DecodeMasked(byte[] dib, int srcOff, int w, int absH, int s
                     $bw.Write([uint32](14 + $srcOff))                 # bfOffBits
                     $bw.Write($dib)
                     $bw.Flush(); $ms.Position = 0
-                    $img = [System.Drawing.Image]::FromStream($ms)
+                    $bmpSrc = [System.Drawing.Image]::FromStream($ms)
+                    try { $img = New-Object System.Drawing.Bitmap $bmpSrc } finally { $bmpSrc.Dispose() }
                 }
 
                 if ($img) {
@@ -406,7 +421,7 @@ public static byte[] DecodeMasked(byte[] dib, int srcOff, int w, int absH, int s
                     $out.Kind = 'dibv5'
                     return $out
                 }
-            } catch { }
+            } catch { if ($_.Exception.Message -match 'clipboard-changed|clipboard write failed') { throw } }
         }
     }
 
@@ -426,14 +441,13 @@ public static byte[] DecodeMasked(byte[] dib, int srcOff, int w, int absH, int s
                         Publish-Result -Path $path -PngBytes $bytes
                     }
                     else {
-                        $im = $null
-                        try { $im = [System.Drawing.Image]::FromStream((New-Object System.IO.MemoryStream (,$bytes))) } catch {}
+                        $im = New-ImageFromBytes $bytes
                         Publish-Result -Path $path -Img $im
                     }
                     $out.Path = $path
                     $out.Kind = 'html-data'
                     return $out
-                } catch { }
+                } catch { if ($_.Exception.Message -match 'clipboard-changed|clipboard write failed') { throw } }
             }
             $m = [regex]::Match($html, 'src\s*=\s*["'']file:///([^"''\s>]+)')
             if ($m.Success) {
@@ -489,15 +503,30 @@ $rs.Open()
 $ps = [powershell]::Create()
 $ps.Runspace = $rs
 [void]$ps.AddScript($work).AddArgument($OutDir).AddArgument([bool]$KeepImage)
-$writeErr = $null
 $changed  = $false
+$writeErr = $null
 try { $invoked = $ps.Invoke() }
 catch {
+    # Some hosts do surface a terminating error here; classify it too.
     if ($_.Exception.Message -match 'clipboard-changed') { $changed = $true }
-    else { $writeErr = $_.Exception.Message }
+    elseif (-not $writeErr) { $writeErr = $_.Exception.Message }
     $invoked = @()
 }
-finally { $ps.Dispose(); $rs.Close(); $rs.Dispose() }
+finally {
+    # In the PowerShell SDK a terminating error inside Invoke() usually lands in
+    # Streams.Error rather than the host try/catch above (verified on PS 7.4:
+    # Invoke returns 0 objects, HadErrors=$true, catch not entered). Read and
+    # classify it BEFORE disposing, or 'clipboard-changed' / a real write failure
+    # would be lost and misreported as "no image".
+    try {
+        foreach ($e in @($ps.Streams.Error)) {
+            $m = "$e"
+            if ($m -match 'clipboard-changed') { $changed = $true }
+            elseif ($m -and -not $writeErr)    { $writeErr = $m }
+        }
+    } catch {}
+    $ps.Dispose(); $rs.Close(); $rs.Dispose()
+}
 
 $r = $invoked | Where-Object { $_ -is [pscustomobject] } | Select-Object -Last 1
 
@@ -510,7 +539,7 @@ if ($changed) {
 
 if ($writeErr -or ($r -and $r.Error -eq 'clipboard-write')) {
     $msg = if ($writeErr) { $writeErr } else { $r.Error }
-    Write-Host "clipwarp: could not write to the clipboard ($msg). Another app may be holding it - try again." -ForegroundColor Red
+    Write-Host "clipwarp: conversion did not complete - $msg" -ForegroundColor Red
     exit 1
 }
 
@@ -523,8 +552,8 @@ if (-not $r -or $r.Error -eq 'no-image' -or -not $r.Path) {
 
 # Best-effort housekeeping: drop PNGs older than 7 days so the folder never grows unbounded.
 try {
-    Get-ChildItem -LiteralPath $OutDir -Filter 'clip-*.png' -ErrorAction Stop |
-        Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
+    Get-ChildItem -LiteralPath $OutDir -Filter 'clip-*' -ErrorAction Stop |
+        Where-Object { $_.Extension -match '^\.(png|jpe?g|gif|webp)$' -and $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
         Remove-Item -Force -ErrorAction SilentlyContinue
 } catch {}
 
