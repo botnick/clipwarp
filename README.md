@@ -197,12 +197,12 @@ No — saved PNGs older than 7 days are cleaned up automatically (see
 ## Uninstall
 
 ```powershell
-# Installed from a clone:
-.\uninstall.ps1                 # remove scripts, profile function, autostart shortcut
-.\uninstall.ps1 -PurgeImages    # also delete the saved-images folder
-
-# Installed with the one-liner (the uninstaller lives in your scripts folder):
+# Works after any install (the installer copies the uninstaller here):
 & "$HOME\.claude\scripts\uninstall.ps1"
+& "$HOME\.claude\scripts\uninstall.ps1" -PurgeImages   # also delete saved images
+
+# Or, from the git clone you installed from:
+.\clipwarp\uninstall.ps1
 ```
 
 The uninstaller stops the watcher, removes its login-autostart shortcut, deletes the
