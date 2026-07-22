@@ -9,6 +9,8 @@ image" in a browser → `Ctrl+V` in Claude Code → image attached.
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Install](https://img.shields.io/badge/install-one%20command-blue)](#install)
 
+![clipwarp in action: install and watch in PowerShell, then a screenshot pasted straight into Claude Code on Windows with Ctrl+V](assets/social-preview.png)
+
 ## The problem: can't paste images from clipboard into Claude Code on Windows
 
 On **native Windows**, Claude Code cannot read an image from the clipboard.
