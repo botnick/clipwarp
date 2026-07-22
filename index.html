@@ -5,145 +5,138 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>clipwarp — paste clipboard images into Claude Code on Windows</title>
 <meta name="description" content="Fix Ctrl+V image paste in Claude Code on native Windows. Screenshot anywhere → Ctrl+V → image attached. One-command install, 100% local, MIT.">
-<link rel="icon" href="assets/mascot.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon.png" type="image/png">
 <meta property="og:title" content="clipwarp — paste screenshots into Claude Code on Windows">
 <meta property="og:description" content="Ctrl+C anywhere → Ctrl+V in Claude Code = image attached. One command, 100% local.">
-<meta property="og:type" content="website">
 <meta property="og:image" content="assets/social-preview.png">
+<meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@400;600;700;800&family=Noto+Sans+Thai:wght@500;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --cream:#FFF7F0; --cream2:#FFEEE2;
-    --ink:#4A3B36; --muted:#94827A;
+    --cream:#FFF7F0; --ink:#4A3B36; --muted:#94827A;
     --peach:#FF8A66; --coral:#FF6F61; --peach-soft:#FFD9C6;
-    --mint:#57C9AB; --mint-soft:#DDF6ED;
-    --gold:#FFC24B;
-    --card:#FFFFFF;
-    --shadow:0 18px 40px rgba(255,122,89,.16);
-    --shadow-sm:0 8px 20px rgba(255,122,89,.14);
-    --radius:26px;
+    --mint:#57C9AB; --mint-soft:#DDF6ED; --gold:#FFC24B;
+    --card:#FFFFFF; --shadow:0 18px 40px rgba(255,122,89,.16);
+    --shadow-sm:0 8px 20px rgba(255,122,89,.14); --radius:26px;
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
-  body{
-    margin:0; font-family:"Nunito",system-ui,sans-serif; color:var(--ink);
-    background:var(--cream); line-height:1.6; -webkit-font-smoothing:antialiased;
-    overflow-x:hidden;
-  }
-  h1,h2,h3,.brand{font-family:"Baloo 2",system-ui,sans-serif; line-height:1.15; margin:0}
+  body{margin:0;font-family:"Nunito","Noto Sans Thai",system-ui,sans-serif;color:var(--ink);
+       background:var(--cream);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  h1,h2,h3,.brand{font-family:"Baloo 2","Noto Sans Thai",system-ui,sans-serif;line-height:1.18;margin:0}
   a{color:inherit}
-  .wrap{max-width:1080px; margin:0 auto; padding:0 22px}
-  .pill{border-radius:999px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 22px}
 
-  /* nav */
-  nav{position:sticky; top:0; z-index:50; backdrop-filter:blur(10px);
-      background:rgba(255,247,240,.82); border-bottom:1px solid #ffe6d8}
-  .nav-in{display:flex; align-items:center; justify-content:space-between; padding:12px 22px; max-width:1080px; margin:0 auto}
-  .brand{display:flex; align-items:center; gap:10px; font-weight:800; font-size:1.35rem; color:var(--ink)}
-  .brand svg{width:34px; height:34px}
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(10px);background:rgba(255,247,240,.85);border-bottom:1px solid #ffe6d8}
+  .nav-in{display:flex;align-items:center;justify-content:space-between;padding:11px 22px;max-width:1080px;margin:0 auto}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:1.35rem;color:var(--ink);text-decoration:none}
+  .brand img{width:36px;height:36px}
   .brand b{color:var(--coral)}
-  .nav-links{display:flex; align-items:center; gap:8px}
-  .nav-links a{padding:9px 15px; text-decoration:none; font-weight:700; color:var(--muted); border-radius:999px}
-  .nav-links a:hover{color:var(--ink); background:#fff0e6}
-  .btn{display:inline-flex; align-items:center; gap:9px; font-family:"Baloo 2"; font-weight:700;
-       text-decoration:none; border:none; cursor:pointer; border-radius:999px; transition:.18s transform,.18s box-shadow}
+  .nav-links{display:flex;align-items:center;gap:6px}
+  .nav-links a{padding:9px 14px;text-decoration:none;font-weight:700;color:var(--muted);border-radius:999px}
+  .nav-links a:hover{color:var(--ink);background:#fff0e6}
+  .lang{display:flex;background:#fff0e6;border-radius:999px;padding:3px;font-weight:800;font-size:.82rem}
+  .lang button{border:none;background:none;cursor:pointer;padding:6px 12px;border-radius:999px;color:var(--muted);font-family:inherit;font-weight:800}
+  .lang button.on{background:linear-gradient(135deg,var(--peach),var(--coral));color:#fff}
+  .btn{display:inline-flex;align-items:center;gap:9px;font-family:"Baloo 2","Noto Sans Thai";font-weight:700;text-decoration:none;border:none;cursor:pointer;border-radius:999px;transition:.18s transform,.18s box-shadow}
   .btn:active{transform:translateY(1px)}
-  .btn-primary{background:linear-gradient(135deg,var(--peach),var(--coral)); color:#fff; padding:13px 24px;
-       box-shadow:0 10px 22px rgba(255,111,97,.38); font-size:1.05rem}
-  .btn-primary:hover{transform:translateY(-2px); box-shadow:0 16px 30px rgba(255,111,97,.46)}
-  .btn-ghost{background:#fff; color:var(--ink); padding:12px 22px; box-shadow:var(--shadow-sm); font-size:1.02rem}
+  .btn-primary{background:linear-gradient(135deg,var(--peach),var(--coral));color:#fff;padding:13px 24px;box-shadow:0 10px 22px rgba(255,111,97,.38);font-size:1.05rem}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 16px 30px rgba(255,111,97,.46)}
+  .btn-ghost{background:#fff;color:var(--ink);padding:12px 22px;box-shadow:var(--shadow-sm);font-size:1.02rem}
   .btn-ghost:hover{transform:translateY(-2px)}
 
-  /* hero */
-  .hero{position:relative; padding:26px 0 40px; overflow:hidden}
-  .blob{position:absolute; border-radius:50%; filter:blur(6px); opacity:.55; z-index:0}
-  .b1{width:320px;height:320px;background:#FFE0CE; top:-90px; right:-70px}
-  .b2{width:260px;height:260px;background:var(--mint-soft); bottom:-80px; left:-80px; opacity:.7}
-  .b3{width:120px;height:120px;background:#FFF0C6; top:120px; left:52%}
-  .hero-grid{position:relative; z-index:1; display:grid; grid-template-columns:1.05fr .95fr; gap:26px; align-items:center}
-  .tag{display:inline-flex; align-items:center; gap:8px; background:var(--mint-soft); color:#2f8f74;
-       font-weight:800; padding:7px 15px; border-radius:999px; font-size:.86rem}
+  .hero{position:relative;padding:26px 0 30px;overflow:hidden}
+  .blob{position:absolute;border-radius:50%;filter:blur(6px);opacity:.55;z-index:0}
+  .b1{width:320px;height:320px;background:#FFE0CE;top:-90px;right:-70px}
+  .b2{width:260px;height:260px;background:var(--mint-soft);bottom:-80px;left:-80px;opacity:.7}
+  .hero-grid{position:relative;z-index:1;display:grid;grid-template-columns:1.05fr .95fr;gap:20px;align-items:center}
+  .tag{display:inline-flex;align-items:center;gap:8px;background:var(--mint-soft);color:#2f8f74;font-weight:800;padding:7px 15px;border-radius:999px;font-size:.86rem}
   .tag .dot{width:8px;height:8px;border-radius:50%;background:var(--mint)}
-  h1{font-size:clamp(2.1rem,5vw,3.5rem); font-weight:800; margin:16px 0 12px; letter-spacing:-.5px}
+  h1{font-size:clamp(2.1rem,5vw,3.4rem);font-weight:800;margin:16px 0 12px;letter-spacing:-.5px}
   h1 .hl{color:var(--coral)}
-  .sub{font-size:1.18rem; color:#6d5a52; max-width:34ch; margin:0 0 24px; font-weight:600}
-  .cta-row{display:flex; flex-wrap:wrap; gap:12px; align-items:center}
-  .microcopy{margin-top:14px; color:var(--muted); font-weight:700; font-size:.92rem; display:flex; gap:14px; flex-wrap:wrap}
-  .microcopy span{display:inline-flex; align-items:center; gap:6px}
-  .mascot-stage{position:relative; display:flex; justify-content:center; align-items:center}
-  .mascot-disc{position:absolute; width:330px; height:330px; border-radius:50%;
-       background:radial-gradient(circle at 50% 40%, #fff 0, #FFE7D8 60%, #FFDFCD 100%); box-shadow:var(--shadow)}
-  .mascot{position:relative; width:300px; height:300px; animation:float 5s ease-in-out infinite}
+  .sub{font-size:1.16rem;color:#6d5a52;max-width:40ch;margin:0 0 24px;font-weight:600}
+  .cta-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .microcopy{margin-top:14px;color:var(--muted);font-weight:700;font-size:.92rem;display:flex;gap:14px;flex-wrap:wrap}
+  .mascot-stage{position:relative;display:flex;justify-content:center;align-items:center}
+  .mascot-disc{position:absolute;width:330px;height:330px;border-radius:50%;background:radial-gradient(circle at 50% 40%,#fff 0,#FFE7D8 60%,#FFDFCD 100%);box-shadow:var(--shadow)}
+  .mascot-stage img{position:relative;width:320px;height:320px;animation:float 5s ease-in-out infinite}
   @keyframes float{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-14px) rotate(1.5deg)}}
-  @media (prefers-reduced-motion: reduce){.mascot{animation:none}}
+  @media (prefers-reduced-motion:reduce){.mascot-stage img{animation:none}}
 
-  /* install */
-  .install{position:relative; z-index:1; margin:6px auto 0; max-width:760px}
-  .install h3{font-size:1.15rem; text-align:center; color:var(--muted); font-weight:700; margin-bottom:12px}
-  .code{display:flex; align-items:center; gap:12px; background:#2b211d; color:#ffe9dd;
-        border-radius:18px; padding:16px 18px; box-shadow:var(--shadow); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
-  .code .prompt{color:#ff9f7e; font-weight:700}
-  .code code{flex:1; overflow-x:auto; white-space:nowrap; font-size:.98rem; padding-bottom:2px}
-  .copy{flex:none; background:#ff8a66; color:#fff; border:none; cursor:pointer; font-weight:800;
-        font-family:"Baloo 2"; padding:9px 16px; border-radius:12px; transition:.15s}
-  .copy:hover{background:#ff764e}
-  .copy.done{background:var(--mint)}
+  .install{position:relative;z-index:1;margin:6px auto 0;max-width:780px}
+  .install h3{font-size:1.1rem;text-align:center;color:var(--muted);font-weight:700;margin-bottom:12px}
+  .code{display:flex;align-items:center;gap:12px;background:#2b211d;color:#ffe9dd;border-radius:18px;padding:16px 18px;box-shadow:var(--shadow);font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  .code .p{color:#ff9f7e;font-weight:700}
+  .code code{flex:1;overflow-x:auto;white-space:nowrap;font-size:.96rem;padding-bottom:2px}
+  .copy{flex:none;background:#ff8a66;color:#fff;border:none;cursor:pointer;font-weight:800;font-family:"Baloo 2";padding:9px 16px;border-radius:12px;transition:.15s}
+  .copy:hover{background:#ff764e}.copy.done{background:var(--mint)}
 
-  /* sections */
-  section.block{padding:56px 0}
+  section.block{padding:52px 0}
   .center{text-align:center}
-  .eyebrow{color:var(--coral); font-weight:800; letter-spacing:.12em; text-transform:uppercase; font-size:.8rem}
-  h2{font-size:clamp(1.7rem,3.6vw,2.5rem); font-weight:800; margin:8px 0 8px}
-  .lead{color:#6d5a52; font-weight:600; max-width:56ch; margin:0 auto}
+  .eyebrow{color:var(--coral);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:.8rem}
+  h2{font-size:clamp(1.7rem,3.6vw,2.4rem);font-weight:800;margin:8px 0 8px}
+  .lead{color:#6d5a52;font-weight:600;max-width:60ch;margin:0 auto}
+  .shot-frame{border-radius:22px;overflow:hidden;box-shadow:var(--shadow);max-width:960px;margin:22px auto 0;background:#0a0a0f}
+  .shot-frame img{width:100%;display:block}
 
-  /* steps */
-  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:34px}
-  .step{background:var(--card); border-radius:var(--radius); padding:26px 22px; box-shadow:var(--shadow-sm);
-        position:relative; text-align:center}
-  .step .n{position:absolute; top:-14px; left:50%; transform:translateX(-50%);
-        width:30px;height:30px; border-radius:50%; background:linear-gradient(135deg,var(--peach),var(--coral));
-        color:#fff; font-family:"Baloo 2"; font-weight:800; display:grid; place-items:center; box-shadow:0 6px 14px rgba(255,111,97,.4)}
-  .step .ico{font-size:2.2rem; margin:6px 0 8px}
-  .step h3{font-size:1.15rem; margin-bottom:4px}
-  .step p{margin:0; color:var(--muted); font-weight:600; font-size:.96rem}
-  .arrow{align-self:center; color:var(--peach-soft)}
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:30px}
+  .step{background:var(--card);border-radius:var(--radius);padding:26px 22px;box-shadow:var(--shadow-sm);position:relative;text-align:center}
+  .step .n{position:absolute;top:-14px;left:50%;transform:translateX(-50%);width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--peach),var(--coral));color:#fff;font-family:"Baloo 2";font-weight:800;display:grid;place-items:center;box-shadow:0 6px 14px rgba(255,111,97,.4)}
+  .step .ico{font-size:2.1rem;margin:6px 0 8px}
+  .step h3{font-size:1.12rem;margin-bottom:4px}
+  .step p{margin:0;color:var(--muted);font-weight:600;font-size:.95rem}
 
-  /* features */
-  .feat{display:grid; grid-template-columns:repeat(2,1fr); gap:18px; margin-top:34px}
-  .card{background:var(--card); border-radius:var(--radius); padding:24px; box-shadow:var(--shadow-sm); display:flex; gap:16px}
-  .card .badge{flex:none; width:52px;height:52px;border-radius:16px; display:grid; place-items:center; font-size:1.6rem}
+  .feat{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:30px}
+  .card{background:var(--card);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow-sm);display:flex;gap:15px}
+  .card .badge{flex:none;width:50px;height:50px;border-radius:15px;display:grid;place-items:center;font-size:1.55rem}
   .badge.p{background:#FFE7DC}.badge.m{background:var(--mint-soft)}.badge.g{background:#FFF2CF}.badge.b{background:#E7F0FF}
-  .card h3{font-size:1.15rem; margin-bottom:3px}
-  .card p{margin:0; color:var(--muted); font-weight:600; font-size:.96rem}
-  .card code{background:#fff0e6; color:#c8543c; padding:1px 7px; border-radius:7px; font-weight:700; font-size:.85em}
+  .card h3{font-size:1.1rem;margin-bottom:3px}
+  .card p{margin:0;color:var(--muted);font-weight:600;font-size:.94rem}
+  .card code{background:#fff0e6;color:#c8543c;padding:1px 7px;border-radius:7px;font-weight:700;font-size:.85em}
 
-  /* strip */
-  .strip{background:linear-gradient(135deg,#fff4ec,#ffe9de); border-radius:32px; padding:34px; text-align:center; box-shadow:var(--shadow-sm)}
-  .tools{display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:16px}
-  .chip{background:#fff; border-radius:999px; padding:8px 16px; font-weight:700; color:#7a675f; box-shadow:0 4px 10px rgba(255,122,89,.1); font-size:.92rem}
+  table.cmd{width:100%;border-collapse:collapse;margin-top:26px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:var(--shadow-sm)}
+  table.cmd td{padding:13px 18px;border-bottom:1px solid #fdeee4;font-weight:600;color:#6d5a52;font-size:.98rem}
+  table.cmd tr:last-child td{border-bottom:none}
+  table.cmd td:first-child{white-space:nowrap}
+  table.cmd code{background:#2b211d;color:#ffe1d2;padding:4px 10px;border-radius:8px;font-weight:700;font-size:.9em}
 
-  /* final cta */
-  .final{background:linear-gradient(135deg,var(--peach),var(--coral)); border-radius:34px; padding:44px 28px;
-         text-align:center; color:#fff; box-shadow:var(--shadow); position:relative; overflow:hidden}
-  .final h2{color:#fff}
-  .final p{color:#fff; opacity:.94; font-weight:600; margin:6px auto 22px; max-width:44ch}
+  .note{background:linear-gradient(135deg,#FFF7E9,#FFEFD6);border:1.5px solid #FFE0A8;border-radius:22px;padding:24px 26px;box-shadow:var(--shadow-sm);display:flex;gap:16px;align-items:flex-start}
+  .note .ic{font-size:1.9rem;flex:none}
+  .note h3{font-size:1.15rem;margin-bottom:4px}
+  .note p{margin:0;color:#7a674d;font-weight:600}
+  .note code{background:#fff;color:#c8543c;padding:2px 8px;border-radius:7px;font-weight:800;font-size:.9em}
+
+  .faq{max-width:820px;margin:28px auto 0;display:flex;flex-direction:column;gap:12px}
+  details{background:#fff;border-radius:18px;box-shadow:var(--shadow-sm);padding:4px 20px;transition:.2s}
+  summary{cursor:pointer;font-family:"Baloo 2","Noto Sans Thai";font-weight:700;font-size:1.06rem;padding:16px 0;list-style:none;display:flex;justify-content:space-between;align-items:center;color:var(--ink)}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";color:var(--coral);font-size:1.5rem;font-weight:800}
+  details[open] summary::after{content:"–"}
+  details p{margin:0 0 18px;color:#6d5a52;font-weight:600}
+  details code{background:#fff0e6;color:#c8543c;padding:1px 7px;border-radius:7px;font-weight:700;font-size:.88em}
+
+  .final{background:linear-gradient(135deg,var(--peach),var(--coral));border-radius:34px;padding:44px 28px;text-align:center;color:#fff;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .final h2{color:#fff}.final p{color:#fff;opacity:.94;font-weight:600;margin:6px auto 22px;max-width:48ch}
   .final .btn-ghost{color:var(--coral)}
-  .final .mini{position:absolute; opacity:.9}
+  .final img{position:absolute;width:96px;opacity:.9}
 
-  footer{padding:38px 0 60px; text-align:center; color:var(--muted); font-weight:600}
-  footer a{color:var(--coral); text-decoration:none; font-weight:800}
-  .foot-brand{display:flex; align-items:center; justify-content:center; gap:9px; margin-bottom:10px; font-family:"Baloo 2"; font-weight:800; font-size:1.2rem; color:var(--ink)}
-  .foot-brand svg{width:30px;height:30px}
+  footer{padding:36px 0 60px;text-align:center;color:var(--muted);font-weight:600}
+  footer a{color:var(--coral);text-decoration:none;font-weight:800}
+  .foot-brand{display:flex;align-items:center;justify-content:center;gap:9px;margin-bottom:10px;font-family:"Baloo 2";font-weight:800;font-size:1.2rem;color:var(--ink)}
+  .foot-brand img{width:30px;height:30px}
+
+  [data-lang-th]{display:none}
+  html[data-lang="th"] [data-lang-en]{display:none}
+  html[data-lang="th"] [data-lang-th]{display:revert}
 
   @media (max-width:860px){
-    .hero-grid{grid-template-columns:1fr; text-align:center}
+    .hero-grid{grid-template-columns:1fr;text-align:center}
     .sub{margin-left:auto;margin-right:auto}
     .cta-row,.microcopy{justify-content:center}
-    .mascot-stage{order:-1; margin-bottom:6px}
-    .steps{grid-template-columns:1fr}
-    .feat{grid-template-columns:1fr}
+    .mascot-stage{order:-1;margin-bottom:6px}
+    .steps,.feat{grid-template-columns:1fr}
     .nav-links a.hidephone{display:none}
   }
 </style>
@@ -152,172 +145,220 @@
 
 <nav>
   <div class="nav-in">
-    <a class="brand" href="#top" style="text-decoration:none">
-      <!-- mini mascot -->
-      <svg viewBox="0 0 260 260" aria-hidden="true"><use href="#peachMascot"/></svg>
-      clip<b>warp</b>
-    </a>
+    <a class="brand" href="#top"><img src="assets/mascot.png" alt="clipwarp peach mascot"> clip<b>warp</b></a>
     <div class="nav-links">
-      <a href="#how" class="hidephone">How it works</a>
-      <a href="#features" class="hidephone">Features</a>
-      <a class="btn btn-ghost" href="https://github.com/botnick/clipwarp" style="padding:9px 18px">★ GitHub</a>
+      <a href="#demo" class="hidephone"><span data-lang-en>Demo</span><span data-lang-th>ตัวอย่าง</span></a>
+      <a href="#features" class="hidephone"><span data-lang-en>Features</span><span data-lang-th>ฟีเจอร์</span></a>
+      <a href="#faq" class="hidephone">FAQ</a>
+      <a class="btn btn-ghost" href="https://github.com/botnick/clipwarp" style="padding:9px 16px">★ GitHub</a>
+      <div class="lang" role="group" aria-label="Language">
+        <button id="btn-en" class="on" onclick="setLang('en')">EN</button>
+        <button id="btn-th" onclick="setLang('th')">ไทย</button>
+      </div>
     </div>
   </div>
 </nav>
 
-<!-- reusable mascot symbol -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="peachMascot" viewBox="0 0 260 260">
-    <defs>
-      <radialGradient id="pBody" cx="38%" cy="32%" r="75%">
-        <stop offset="0%" stop-color="#FFE0C2"/><stop offset="42%" stop-color="#FFB48A"/><stop offset="100%" stop-color="#FF8A66"/>
-      </radialGradient>
-      <linearGradient id="pLeaf" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#9BE7C4"/><stop offset="100%" stop-color="#4FBF9A"/></linearGradient>
-      <linearGradient id="pWarp" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#7ED9C3" stop-opacity="0"/><stop offset="100%" stop-color="#7ED9C3"/></linearGradient>
-      <filter id="pSoft" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#FF7A59" flood-opacity="0.28"/></filter>
-    </defs>
-    <g opacity="0.9">
-      <path d="M18 150 q40 -10 70 0" stroke="url(#pWarp)" stroke-width="7" stroke-linecap="round" fill="none"/>
-      <path d="M12 176 q46 -12 82 -2" stroke="url(#pWarp)" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.7"/>
-    </g>
-    <path d="M206 54 l5 12 12 5 -12 5 -5 12 -5 -12 -12 -5 12 -5z" fill="#FFC86B"/>
-    <path d="M212 150 l3.5 8 8 3.5 -8 3.5 -3.5 8 -3.5 -8 -8 -3.5 8 -3.5z" fill="#FF7A9A"/>
-    <circle cx="60" cy="70" r="4.5" fill="#7ED9C3"/><circle cx="196" cy="104" r="3.5" fill="#FFC86B"/>
-    <path d="M132 44 q3 -18 -6 -28" stroke="#8A5A3C" stroke-width="7" stroke-linecap="round" fill="none"/>
-    <path d="M132 40 q34 -26 58 -6 q-18 30 -58 12 z" fill="url(#pLeaf)"/>
-    <path d="M150 30 q16 6 28 18" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="3" stroke-linecap="round" fill="none"/>
-    <g filter="url(#pSoft)">
-      <path d="M130 58 C 92 58, 58 84, 58 132 C 58 186, 96 220, 130 220 C 164 220, 202 186, 202 132 C 202 84, 168 58, 130 58 Z" fill="url(#pBody)"/>
-      <path d="M130 66 C 122 96, 122 150, 130 206" stroke="#F0693F" stroke-opacity="0.35" stroke-width="6" stroke-linecap="round" fill="none"/>
-      <ellipse cx="98" cy="106" rx="20" ry="26" fill="#FFFFFF" opacity="0.35" transform="rotate(-18 98 106)"/>
-    </g>
-    <ellipse cx="96" cy="158" rx="15" ry="9" fill="#FF7A7A" opacity="0.38"/>
-    <ellipse cx="166" cy="158" rx="15" ry="9" fill="#FF7A7A" opacity="0.38"/>
-    <ellipse cx="106" cy="136" rx="11" ry="13" fill="#43302B"/><ellipse cx="156" cy="136" rx="11" ry="13" fill="#43302B"/>
-    <circle cx="110" cy="131" r="3.6" fill="#fff"/><circle cx="160" cy="131" r="3.6" fill="#fff"/>
-    <circle cx="103" cy="140" r="1.8" fill="#fff" opacity="0.8"/><circle cx="153" cy="140" r="1.8" fill="#fff" opacity="0.8"/>
-    <path d="M118 158 q13 14 26 0" stroke="#43302B" stroke-width="4.5" stroke-linecap="round" fill="none"/>
-  </symbol>
-</svg>
-
 <a id="top"></a>
 <header class="hero">
-  <span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span>
+  <span class="blob b1"></span><span class="blob b2"></span>
   <div class="wrap hero-grid">
     <div>
-      <span class="tag"><span class="dot"></span> Works on native Windows 10 &amp; 11</span>
-      <h1>Paste screenshots into <span class="hl">Claude&nbsp;Code</span>, finally.</h1>
-      <p class="sub">On Windows, <code style="background:#fff0e6;color:#c8543c;padding:1px 7px;border-radius:7px;font-weight:800">Ctrl+V</code> can't drop a screenshot into Claude Code. <b>clipwarp</b> fixes it — copy an image anywhere, paste it straight in.</p>
+      <span class="tag"><span class="dot"></span>
+        <span data-lang-en>Works on native Windows 10 &amp; 11</span>
+        <span data-lang-th>ใช้ได้บน Windows 10 &amp; 11 (native)</span>
+      </span>
+      <h1>
+        <span data-lang-en>Paste screenshots into <span class="hl">Claude&nbsp;Code</span>, finally.</span>
+        <span data-lang-th>วางสกรีนช็อตลง <span class="hl">Claude&nbsp;Code</span> ได้แล้ว!</span>
+      </h1>
+      <p class="sub">
+        <span data-lang-en>On Windows, <b>Ctrl+V</b> can't drop a screenshot into Claude Code. <b>clipwarp</b> fixes it — copy an image anywhere, paste it straight in.</span>
+        <span data-lang-th>บน Windows กด <b>Ctrl+V</b> วางรูปลง Claude Code ไม่ได้ <b>clipwarp</b> แก้ให้ — ก๊อปรูปจากที่ไหนก็ได้ แล้ววางเข้าไปตรง ๆ</span>
+      </p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="#install">🍑 Get clipwarp</a>
-        <a class="btn btn-ghost" href="#how">See how it works</a>
+        <a class="btn btn-primary" href="#install">🍑 <span data-lang-en>Get clipwarp</span><span data-lang-th>เริ่มใช้ clipwarp</span></a>
+        <a class="btn btn-ghost" href="#how"><span data-lang-en>See how it works</span><span data-lang-th>ดูวิธีทำงาน</span></a>
       </div>
       <div class="microcopy">
-        <span>✓ One-command install</span>
-        <span>✓ 100% local</span>
-        <span>✓ MIT &amp; open source</span>
+        <span data-lang-en>✓ One-command install</span><span data-lang-th>✓ ติดตั้งคำสั่งเดียว</span>
+        <span data-lang-en>✓ 100% local</span><span data-lang-th>✓ ทำงานในเครื่อง 100%</span>
+        <span data-lang-en>✓ MIT &amp; open source</span><span data-lang-th>✓ โอเพนซอร์ส MIT</span>
       </div>
     </div>
     <div class="mascot-stage">
       <div class="mascot-disc"></div>
-      <svg class="mascot" viewBox="0 0 260 260" role="img" aria-label="Warpy, the clipwarp peach mascot"><use href="#peachMascot"/></svg>
+      <img src="assets/mascot.png" alt="Warpy, the clipwarp peach mascot">
     </div>
   </div>
 
   <div class="wrap install" id="install">
-    <h3>Paste this into PowerShell — that's the whole setup 👇</h3>
+    <h3>
+      <span data-lang-en>Paste this into PowerShell — that's the whole setup 👇</span>
+      <span data-lang-th>วางคำสั่งนี้ใน PowerShell — จบแค่นี้ 👇</span>
+    </h3>
     <div class="code">
-      <span class="prompt">PS&gt;</span>
+      <span class="p">PS&gt;</span>
       <code id="cmd">irm https://raw.githubusercontent.com/botnick/clipwarp/main/install.ps1 | iex</code>
-      <button class="copy" id="copyBtn">Copy</button>
+      <button class="copy" id="copyBtn"><span data-lang-en>Copy</span><span data-lang-th>คัดลอก</span></button>
     </div>
   </div>
 </header>
 
-<section class="block" id="demo" style="padding-top:34px">
+<section class="block" id="demo" style="padding-top:30px">
   <div class="wrap center">
-    <div class="eyebrow">See it in action</div>
-    <h2 style="margin-bottom:20px">Real terminal, real paste 🎬</h2>
-    <div style="border-radius:22px;overflow:hidden;box-shadow:var(--shadow);max-width:980px;margin:0 auto;background:#0a0a0f">
-      <img src="assets/demo.gif" alt="clipwarp demo: installing in PowerShell, then pasting a screenshot into Claude Code with Ctrl+V" style="width:100%;display:block">
-    </div>
+    <div class="eyebrow"><span data-lang-en>See it in action</span><span data-lang-th>ดูตอนใช้งานจริง</span></div>
+    <h2><span data-lang-en>Real terminal, real paste</span><span data-lang-th>เทอร์มินัลจริง วางรูปจริง</span></h2>
+    <p class="lead"><span data-lang-en>Install, run the watcher, then a screenshot pastes straight into Claude Code as an image.</span><span data-lang-th>ติดตั้ง เปิด watcher แล้วสกรีนช็อตก็วางลง Claude Code เป็นรูปได้เลย</span></p>
+    <div class="shot-frame"><img src="assets/showcase.png" alt="clipwarp: PowerShell install and a screenshot pasted into Claude Code"></div>
   </div>
 </section>
 
-<section class="block" id="how" style="padding-top:34px">
+<section class="block" id="how" style="padding-top:20px">
   <div class="wrap center">
-    <div class="eyebrow">How it works</div>
-    <h2>Copy → warp → paste ✨</h2>
-    <p class="lead">clipwarp watches your clipboard. The moment an image lands on it, it saves a PNG and quietly puts that file's <b>path</b> on the clipboard as text — which Claude Code happily attaches.</p>
+    <div class="eyebrow"><span data-lang-en>How it works</span><span data-lang-th>ทำงานยังไง</span></div>
+    <h2><span data-lang-en>Copy → warp → paste ✨</span><span data-lang-th>ก๊อป → วาร์ป → วาง ✨</span></h2>
+    <p class="lead"><span data-lang-en>clipwarp watches your clipboard. When an image lands on it, it saves a PNG and puts that file's path on the clipboard as text — which Claude Code auto-attaches.</span><span data-lang-th>clipwarp คอยดู clipboard พอมีรูปเข้ามา มันจะเซฟเป็น PNG แล้วเอา path ของไฟล์ใส่ clipboard เป็นข้อความ — ซึ่ง Claude Code จะแนบรูปให้เองอัตโนมัติ</span></p>
     <div class="steps">
-      <div class="step"><span class="n">1</span><div class="ico">✂️</div><h3>Copy any image</h3><p>Win+Shift+S, Snipping Tool, Lightshot, ShareX, or “Copy image” in a browser.</p></div>
-      <div class="step"><span class="n">2</span><div class="ico">🍑</div><h3>clipwarp warps it</h3><p>Saves a PNG and swaps the clipboard to its path — automatically, in the background.</p></div>
-      <div class="step"><span class="n">3</span><div class="ico">🎉</div><h3>Ctrl+V in Claude</h3><p>Press paste in Claude Code and the screenshot attaches. No extra steps.</p></div>
+      <div class="step"><span class="n">1</span><div class="ico">✂️</div>
+        <h3><span data-lang-en>Copy any image</span><span data-lang-th>ก๊อปรูปอะไรก็ได้</span></h3>
+        <p><span data-lang-en>Win+Shift+S, Snipping Tool, Lightshot, ShareX, or “Copy image” in a browser.</span><span data-lang-th>Win+Shift+S, Snipping Tool, Lightshot, ShareX หรือ “Copy image” ในเบราว์เซอร์</span></p></div>
+      <div class="step"><span class="n">2</span><div class="ico">🍑</div>
+        <h3><span data-lang-en>clipwarp warps it</span><span data-lang-th>clipwarp วาร์ปให้</span></h3>
+        <p><span data-lang-en>Saves a PNG and swaps the clipboard to its path — automatically, in the background.</span><span data-lang-th>เซฟ PNG แล้วสลับ clipboard เป็น path ให้อัตโนมัติเบื้องหลัง</span></p></div>
+      <div class="step"><span class="n">3</span><div class="ico">🎉</div>
+        <h3><span data-lang-en>Ctrl+V in Claude</span><span data-lang-th>Ctrl+V ใน Claude</span></h3>
+        <p><span data-lang-en>Press paste in Claude Code and the screenshot attaches. No extra steps.</span><span data-lang-th>กดวางใน Claude Code แล้วรูปแนบเลย ไม่มีขั้นตอนเพิ่ม</span></p></div>
     </div>
   </div>
 </section>
 
-<section class="block" id="features" style="padding-top:8px">
+<section class="block" id="features" style="padding-top:12px">
   <div class="wrap">
     <div class="center">
-      <div class="eyebrow">Why you'll like it</div>
-      <h2>Small tool, zero fuss 🧸</h2>
+      <div class="eyebrow"><span data-lang-en>Why you'll like it</span><span data-lang-th>ทำไมถึงน่าใช้</span></div>
+      <h2><span data-lang-en>Small tool, zero fuss 🧸</span><span data-lang-th>ทูลเล็ก ๆ ไม่ยุ่งยาก 🧸</span></h2>
     </div>
     <div class="feat">
-      <div class="card"><div class="badge p">⚡</div><div><h3>Fully automatic</h3><p>Run <code>clipwarp watch</code> once (or <code>autostart</code> at login). Then it's just Ctrl+C → Ctrl+V, forever.</p></div></div>
-      <div class="card"><div class="badge m">🔒</div><div><h3>100% local &amp; private</h3><p>Plain PowerShell + built-in .NET. Your images never touch the network — ever.</p></div></div>
-      <div class="card"><div class="badge g">🖼️</div><div><h3>Reads every format</h3><p>Bitmaps, PNG streams, alpha DIBv5, file copies, browser “Copy image”. Where naive clipboard reads fail, clipwarp doesn't.</p></div></div>
-      <div class="card"><div class="badge b">🪶</div><div><h3>No admin, no deps</h3><p>No services, no installs. Works in Windows Terminal, PowerShell, cmd &amp; the VS Code terminal. PS 5.1 &amp; 7.</p></div></div>
+      <div class="card"><div class="badge p">⚡</div><div>
+        <h3><span data-lang-en>Fully automatic</span><span data-lang-th>อัตโนมัติเต็มตัว</span></h3>
+        <p><span data-lang-en>Run <code>clipwarp watch</code> once (or <code>autostart</code> at login). Then it's just Ctrl+C → Ctrl+V, forever.</span><span data-lang-th>รัน <code>clipwarp watch</code> ครั้งเดียว (หรือ <code>autostart</code> ตอนล็อกอิน) จากนั้นก็แค่ Ctrl+C → Ctrl+V ตลอด</span></p></div></div>
+      <div class="card"><div class="badge m">🔒</div><div>
+        <h3><span data-lang-en>100% local &amp; private</span><span data-lang-th>ในเครื่อง 100% เป็นส่วนตัว</span></h3>
+        <p><span data-lang-en>Plain PowerShell + built-in .NET. Your images never touch the network — ever.</span><span data-lang-th>เป็น PowerShell + .NET ที่มากับ Windows รูปไม่ออกเน็ตเด็ดขาด</span></p></div></div>
+      <div class="card"><div class="badge g">🖼️</div><div>
+        <h3><span data-lang-en>Reads every format</span><span data-lang-th>อ่านได้ทุกฟอร์แมต</span></h3>
+        <p><span data-lang-en>Bitmaps, PNG streams, alpha DIBv5, file copies, browser “Copy image”. Where naive clipboard reads fail, clipwarp doesn't.</span><span data-lang-th>bitmap, PNG stream, DIBv5 มี alpha, ก๊อปไฟล์, “Copy image” จากเบราว์เซอร์ — ที่การอ่านแบบง่าย ๆ ล้มเหลว clipwarp ทำได้</span></p></div></div>
+      <div class="card"><div class="badge b">🪶</div><div>
+        <h3><span data-lang-en>No admin, no deps</span><span data-lang-th>ไม่ต้อง admin ไม่มี dependency</span></h3>
+        <p><span data-lang-en>No services, no installs. Works in Windows Terminal, PowerShell, cmd &amp; the VS Code terminal. PS 5.1 &amp; 7.</span><span data-lang-th>ไม่มี service ไม่ต้องลงอะไรเพิ่ม ใช้ได้ใน Windows Terminal, PowerShell, cmd และเทอร์มินัล VS Code รองรับ PS 5.1 &amp; 7</span></p></div></div>
     </div>
   </div>
 </section>
 
-<section class="block" style="padding-top:8px">
+<section class="block" style="padding-top:12px">
   <div class="wrap">
-    <div class="strip">
-      <div class="eyebrow">Plays nice with</div>
-      <h2 style="margin-top:4px">Whatever you screenshot with</h2>
-      <div class="tools">
-        <span class="chip">Win+Shift+S</span><span class="chip">Snipping Tool</span><span class="chip">Lightshot</span>
-        <span class="chip">ShareX</span><span class="chip">Greenshot</span><span class="chip">PrtScn</span>
-        <span class="chip">Chrome / Firefox</span><span class="chip">Discord</span><span class="chip">Explorer file copy</span>
+    <div class="center">
+      <div class="eyebrow"><span data-lang-en>Commands</span><span data-lang-th>คำสั่ง</span></div>
+      <h2><span data-lang-en>Everything you can type</span><span data-lang-th>คำสั่งทั้งหมด</span></h2>
+    </div>
+    <table class="cmd">
+      <tr><td><code>clipwarp watch</code></td><td><span data-lang-en>Start the background auto-converter.</span><span data-lang-th>เริ่มตัวแปลงอัตโนมัติเบื้องหลัง</span></td></tr>
+      <tr><td><code>clipwarp autostart</code></td><td><span data-lang-en>Start the watcher automatically at every login.</span><span data-lang-th>ให้ watcher เริ่มเองทุกครั้งที่ล็อกอิน</span></td></tr>
+      <tr><td><code>clipwarp status</code></td><td><span data-lang-en>Is the watcher running? Is autostart on?</span><span data-lang-th>เช็กว่า watcher ทำงานอยู่ไหม + autostart เปิดอยู่ไหม</span></td></tr>
+      <tr><td><code>clipwarp stop</code></td><td><span data-lang-en>Stop the watcher.</span><span data-lang-th>หยุด watcher</span></td></tr>
+      <tr><td><code>clipwarp unautostart</code></td><td><span data-lang-en>Remove the login autostart.</span><span data-lang-th>เอา autostart ตอนล็อกอินออก</span></td></tr>
+      <tr><td><code>cw</code></td><td><span data-lang-en>Short alias — convert the current clipboard image once, then Ctrl+V.</span><span data-lang-th>ตัวย่อ — แปลงรูปใน clipboard ครั้งเดียว แล้ว Ctrl+V</span></td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="block" style="padding-top:12px">
+  <div class="wrap">
+    <div class="note">
+      <div class="ic">💡</div>
+      <div>
+        <h3><span data-lang-en>Not using Claude Code right now? Turn the watcher off.</span><span data-lang-th>ไม่ได้ใช้ Claude Code อยู่? ปิด watcher ก่อน</span></h3>
+        <p>
+          <span data-lang-en>While <code>clipwarp watch</code> is running, every copied image also carries its file <b>path</b> as text. Apps that accept images still paste the image — but a plain <b>text</b> box will receive the path instead (e.g. <code>C:\Users\you\.claude\pasted-images\clip-….png</code>). When you're done with Claude Code, run <code>clipwarp stop</code> (and <code>clipwarp unautostart</code> to stop it launching at login).</span>
+          <span data-lang-th>ระหว่างที่ <code>clipwarp watch</code> ทำงาน ทุกครั้งที่ก๊อปรูป clipboard จะพก <b>path</b> ของไฟล์เป็นข้อความไปด้วย แอปที่รับรูปได้จะวางเป็นรูปปกติ — แต่ช่องที่รับเฉพาะ <b>ข้อความ</b> จะได้ path มาแทน (เช่น <code>C:\Users\you\.claude\pasted-images\clip-….png</code>) พอเลิกใช้ Claude Code ให้รัน <code>clipwarp stop</code> (และ <code>clipwarp unautostart</code> เพื่อไม่ให้เปิดเองตอนล็อกอิน)</span>
+        </p>
       </div>
     </div>
   </div>
 </section>
 
-<section class="block" style="padding-top:8px">
+<section class="block" id="faq" style="padding-top:12px">
+  <div class="wrap">
+    <div class="center">
+      <div class="eyebrow">FAQ</div>
+      <h2><span data-lang-en>Questions &amp; answers</span><span data-lang-th>คำถามที่พบบ่อย</span></h2>
+    </div>
+    <div class="faq">
+      <details open><summary><span data-lang-en>Why doesn't Ctrl+V image paste work in Claude Code on Windows?</span><span data-lang-th>ทำไม Ctrl+V วางรูปใน Claude Code บน Windows ไม่ได้?</span></summary>
+        <p><span data-lang-en>Claude Code's terminal UI on native Windows can't read raw bitmaps from the clipboard, and <code>Alt+V</code> is WSL-only. Pasting a file <i>path</i> as text is the reliable route — clipwarp automates it.</span><span data-lang-th>ตัว UI เทอร์มินัลของ Claude Code บน Windows แท้ ๆ อ่าน bitmap จาก clipboard ไม่ได้ และ <code>Alt+V</code> ใช้ได้แค่บน WSL วิธีที่เวิร์กคือวาง <i>path</i> ของไฟล์เป็นข้อความ — clipwarp ทำให้อัตโนมัติ</span></p></details>
+      <details><summary><span data-lang-en>How do I paste a screenshot into Claude Code?</span><span data-lang-th>วางสกรีนช็อตลง Claude Code ยังไง?</span></summary>
+        <p><span data-lang-en>With the watcher running, take the screenshot (<code>Win+Shift+S</code>, PrtScn, Lightshot…), then press <code>Ctrl+V</code> in Claude Code. Without the watcher, run <code>cw</code> after the screenshot, then <code>Ctrl+V</code>.</span><span data-lang-th>เปิด watcher ไว้ แล้วจับภาพ (<code>Win+Shift+S</code>, PrtScn, Lightshot…) จากนั้นกด <code>Ctrl+V</code> ใน Claude Code ถ้าไม่เปิด watcher ให้รัน <code>cw</code> หลังจับภาพ แล้วค่อย <code>Ctrl+V</code></span></p></details>
+      <details><summary><span data-lang-en>Does it work with WSL?</span><span data-lang-th>ใช้กับ WSL ได้ไหม?</span></summary>
+        <p><span data-lang-en>Under WSL, Claude Code's own <code>Alt+V</code> usually works. clipwarp targets <b>native Windows</b> (Windows Terminal, PowerShell, cmd, VS Code terminal), where nothing else does.</span><span data-lang-th>บน WSL ปกติ <code>Alt+V</code> ของ Claude Code ใช้ได้อยู่แล้ว clipwarp ทำมาเพื่อ <b>Windows แท้</b> (Windows Terminal, PowerShell, cmd, เทอร์มินัล VS Code) ที่ไม่มีอะไรใช้ได้</span></p></details>
+      <details><summary><span data-lang-en>Is my screenshot uploaded anywhere?</span><span data-lang-th>รูปถูกอัปโหลดไปไหนไหม?</span></summary>
+        <p><span data-lang-en>No. clipwarp is a local PowerShell script — the image is written to a folder in your user profile and its path is put on your clipboard. Nothing touches the network.</span><span data-lang-th>ไม่ clipwarp เป็นสคริปต์ PowerShell ในเครื่อง — รูปถูกเซฟลงโฟลเดอร์ในโปรไฟล์ของคุณ แล้วเอา path ใส่ clipboard เท่านั้น ไม่มีอะไรออกเน็ต</span></p></details>
+      <details><summary><span data-lang-en>Which screenshot tools are supported?</span><span data-lang-th>รองรับเครื่องมือจับภาพตัวไหนบ้าง?</span></summary>
+        <p><span data-lang-en>Anything that puts an image on the clipboard: Snipping Tool, Win+Shift+S, PrtScn, Lightshot, ShareX, Greenshot, browser “Copy image”, Explorer file copies, and more.</span><span data-lang-th>อะไรก็ได้ที่ใส่รูปลง clipboard: Snipping Tool, Win+Shift+S, PrtScn, Lightshot, ShareX, Greenshot, “Copy image” จากเบราว์เซอร์, ก๊อปไฟล์จาก Explorer และอื่น ๆ</span></p></details>
+      <details><summary><span data-lang-en>What are the requirements?</span><span data-lang-th>ต้องใช้อะไรบ้าง?</span></summary>
+        <p><span data-lang-en>Windows 10 / 11, Windows PowerShell 5.1 (preinstalled) or PowerShell 7, and Claude Code running in any native Windows terminal.</span><span data-lang-th>Windows 10 / 11, Windows PowerShell 5.1 (มีมาให้อยู่แล้ว) หรือ PowerShell 7 และ Claude Code ที่รันในเทอร์มินัล Windows แท้</span></p></details>
+    </div>
+  </div>
+</section>
+
+<section class="block" style="padding-top:12px">
   <div class="wrap">
     <div class="final">
-      <svg class="mini" style="width:70px;top:14px;left:20px;transform:rotate(-12deg)" viewBox="0 0 260 260"><use href="#peachMascot"/></svg>
-      <svg class="mini" style="width:56px;bottom:8px;right:22px;transform:rotate(10deg)" viewBox="0 0 260 260"><use href="#peachMascot"/></svg>
-      <div class="eyebrow" style="color:#fff;opacity:.9">Ready in 10 seconds</div>
-      <h2>Give your screenshots a shortcut 🍑</h2>
-      <p>One command, and Ctrl+V just works in Claude Code. Free &amp; open source.</p>
-      <a class="btn btn-ghost" href="https://github.com/botnick/clipwarp">View on GitHub →</a>
+      <img src="assets/mascot.png" alt="" style="top:14px;left:22px;transform:rotate(-12deg)">
+      <img src="assets/mascot.png" alt="" style="bottom:8px;right:24px;width:74px;transform:rotate(10deg)">
+      <div class="eyebrow" style="color:#fff;opacity:.9"><span data-lang-en>Ready in 10 seconds</span><span data-lang-th>พร้อมใช้ใน 10 วินาที</span></div>
+      <h2><span data-lang-en>Give your screenshots a shortcut 🍑</span><span data-lang-th>ทำให้สกรีนช็อตมีทางลัด 🍑</span></h2>
+      <p><span data-lang-en>One command, and Ctrl+V just works in Claude Code. Free &amp; open source.</span><span data-lang-th>คำสั่งเดียว แล้ว Ctrl+V ก็ใช้ได้ใน Claude Code ฟรีและโอเพนซอร์ส</span></p>
+      <a class="btn btn-ghost" href="https://github.com/botnick/clipwarp"><span data-lang-en>View on GitHub →</span><span data-lang-th>ดูบน GitHub →</span></a>
     </div>
   </div>
 </section>
 
 <footer>
-  <div class="foot-brand"><svg viewBox="0 0 260 260" aria-hidden="true"><use href="#peachMascot"/></svg> clipwarp</div>
-  <div>Made for <a href="https://claude.com/claude-code">Claude Code</a> on Windows · <a href="https://github.com/botnick/clipwarp">GitHub</a> · MIT License</div>
-  <div style="margin-top:8px;color:#b7a69d;font-size:.9rem">🍑 Meet Warpy — your friendly clipboard peach.</div>
+  <div class="foot-brand"><img src="assets/mascot.png" alt=""> clipwarp</div>
+  <div>
+    <span data-lang-en>Made for <a href="https://claude.com/claude-code">Claude Code</a> on Windows · <a href="https://github.com/botnick/clipwarp">GitHub</a> · MIT License</span>
+    <span data-lang-th>ทำเพื่อ <a href="https://claude.com/claude-code">Claude Code</a> บน Windows · <a href="https://github.com/botnick/clipwarp">GitHub</a> · สัญญาอนุญาต MIT</span>
+  </div>
+  <div style="margin-top:8px;color:#b7a69d;font-size:.9rem">🍑 <span data-lang-en>Meet Warpy — your friendly clipboard peach.</span><span data-lang-th>นี่คือ Warpy — พีชผู้ช่วยเรื่อง clipboard ของคุณ</span></div>
 </footer>
 
 <script>
+  function setLang(l){
+    document.documentElement.setAttribute('data-lang', l);
+    document.documentElement.setAttribute('lang', l==='th'?'th':'en');
+    document.getElementById('btn-en').classList.toggle('on', l==='en');
+    document.getElementById('btn-th').classList.toggle('on', l==='th');
+    try{ localStorage.setItem('clipwarp-lang', l); }catch(e){}
+  }
+  (function(){
+    let l='en';
+    try{ l = localStorage.getItem('clipwarp-lang') || ((navigator.language||'').toLowerCase().startsWith('th')?'th':'en'); }catch(e){}
+    setLang(l);
+  })();
+
   const btn = document.getElementById('copyBtn');
   btn.addEventListener('click', async () => {
     const text = document.getElementById('cmd').textContent.trim();
     try { await navigator.clipboard.writeText(text); }
     catch (e) {
-      const r = document.createRange(); r.selectNode(document.getElementById('cmd'));
-      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
-      try { document.execCommand('copy'); } catch(_){}
-      s.removeAllRanges();
+      const r=document.createRange(); r.selectNode(document.getElementById('cmd'));
+      const s=getSelection(); s.removeAllRanges(); s.addRange(r);
+      try{ document.execCommand('copy'); }catch(_){} s.removeAllRanges();
     }
-    btn.textContent = 'Copied ✓'; btn.classList.add('done');
-    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1800);
+    const th = document.documentElement.getAttribute('data-lang')==='th';
+    btn.innerHTML = th ? 'คัดลอกแล้ว ✓' : 'Copied ✓'; btn.classList.add('done');
+    setTimeout(()=>{ btn.innerHTML='<span data-lang-en>Copy</span><span data-lang-th>คัดลอก</span>'; btn.classList.remove('done'); }, 1800);
   });
 </script>
 </body>

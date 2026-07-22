@@ -87,6 +87,15 @@ clipwarp stop        # stop it
 clipwarp unautostart # remove the login autostart
 ```
 
+> [!IMPORTANT]
+> **Turn the watcher off when you're not using Claude Code.** While
+> `clipwarp watch` is running, every copied image also carries its file **path**
+> as text. Apps that accept images still paste the image — but a plain **text**
+> box will receive the path instead (e.g.
+> `C:\Users\you\.claude\pasted-images\clip-20260101-120000-000.png`). When you're
+> done with Claude Code, run `clipwarp stop` (and `clipwarp unautostart` so it
+> doesn't launch at the next login).
+
 ### Manual: one command per paste
 
 1. Screenshot or copy any image (`Win+Shift+S`, Lightshot, ShareX, browser...).
