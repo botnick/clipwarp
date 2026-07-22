@@ -72,6 +72,8 @@
   .code code{flex:1;overflow-x:auto;white-space:nowrap;font-size:.96rem;padding-bottom:2px}
   .copy{flex:none;background:#ff8a66;color:#fff;border:none;cursor:pointer;font-weight:800;font-family:"Baloo 2";padding:9px 16px;border-radius:12px;transition:.15s}
   .copy:hover{background:#ff764e}.copy.done{background:var(--mint)}
+  .install-peach{position:absolute;left:-128px;bottom:-6px;width:120px;transform:rotate(6deg)}
+  @media (max-width:1060px){.install-peach{display:none}}
 
   section.block{padding:52px 0}
   .center{text-align:center}
@@ -205,6 +207,7 @@
       <code id="cmd">irm https://raw.githubusercontent.com/botnick/clipwarp/main/install.ps1 | iex</code>
       <button class="copy" id="copyBtn"><span data-lang-en>Copy</span><span data-lang-th>คัดลอก</span></button>
     </div>
+    <img class="install-peach" src="assets/poses/point.png" alt="">
   </div>
 </header>
 
@@ -213,6 +216,7 @@
     <div class="eyebrow"><span data-lang-en>See it in action</span><span data-lang-th>ดูตอนใช้งานจริง</span></div>
     <h2><span data-lang-en>Real terminal, real paste</span><span data-lang-th>เทอร์มินัลจริง วางรูปจริง</span></h2>
     <p class="lead"><span data-lang-en>Install, run the watcher, then a screenshot pastes straight into Claude Code as an image.</span><span data-lang-th>ติดตั้ง เปิด watcher แล้วสกรีนช็อตก็วางลง Claude Code เป็นรูปได้เลย</span></p>
+    <img src="assets/poses/hold.png" alt="" style="width:130px;display:block;margin:14px auto -34px;position:relative;z-index:2">
     <div class="shot-frame"><img src="assets/showcase.png" alt="clipwarp: PowerShell install and a screenshot pasted into Claude Code"></div>
   </div>
 </section>
@@ -279,7 +283,7 @@
 <section class="block" style="padding-top:12px">
   <div class="wrap">
     <div class="note">
-      <div class="ic">💡</div>
+      <img class="ic" src="assets/poses/sleepy.png" alt="" style="width:64px;height:64px;object-fit:contain">
       <div style="flex:1">
         <h3><span data-lang-en>Not using Claude Code? Turn the watcher off.</span><span data-lang-th>ไม่ได้ใช้ Claude Code? ปิด watcher ก่อน</span></h3>
         <p style="margin-bottom:12px">
@@ -325,8 +329,8 @@
 <section class="block" style="padding-top:12px">
   <div class="wrap">
     <div class="final">
-      <img src="assets/mascot.png" alt="" style="top:14px;left:22px;transform:rotate(-12deg)">
-      <img src="assets/mascot.png" alt="" style="bottom:8px;right:24px;width:74px;transform:rotate(10deg)">
+      <img src="assets/poses/celebrate.png" alt="" style="top:8px;left:16px;width:104px;transform:rotate(-8deg)">
+      <img src="assets/poses/thumbsup.png" alt="" style="bottom:4px;right:18px;width:92px;transform:rotate(8deg)">
       <div class="eyebrow" style="color:#fff;opacity:.9"><span data-lang-en>Ready in 10 seconds</span><span data-lang-th>พร้อมใช้ใน 10 วินาที</span></div>
       <h2><span data-lang-en>Give your screenshots a shortcut 🍑</span><span data-lang-th>ทำให้สกรีนช็อตมีทางลัด 🍑</span></h2>
       <p><span data-lang-en>One command, and Ctrl+V just works in Claude Code. Free &amp; open source.</span><span data-lang-th>คำสั่งเดียว แล้ว Ctrl+V ก็ใช้ได้ใน Claude Code ฟรีและโอเพนซอร์ส</span></p>
