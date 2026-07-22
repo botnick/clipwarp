@@ -1,11 +1,15 @@
-# clipwarp
+# clipwarp — paste clipboard images into Claude Code on Windows
 
-**Paste clipboard images into Claude Code on Windows — fix the broken `Ctrl+V` image paste.**
+**Fixes `Ctrl+V` image paste not working in Claude Code on native Windows.**
+Screenshot with Snipping Tool / `Win+Shift+S` / Lightshot / ShareX, or "Copy
+image" in a browser → `Ctrl+V` in Claude Code → image attached.
 
 [![Windows](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?logo=windows&logoColor=white)](#requirements)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE?logo=powershell&logoColor=white)](#requirements)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Install](https://img.shields.io/badge/install-one%20command-blue)](#install)
+
+## The problem: can't paste images from clipboard into Claude Code on Windows
 
 On **native Windows**, Claude Code cannot read an image from the clipboard.
 `Ctrl+V` and `Alt+V` silently do nothing after you take a screenshot with
@@ -126,28 +130,39 @@ Saved PNGs older than 7 days are cleaned up automatically.
 
 ## FAQ
 
-**Why doesn't `Ctrl+V` paste images into Claude Code on Windows?**
+### Why is `Ctrl+V` image paste not working in Claude Code on Windows?
+
 Claude Code's terminal UI on native Windows can't read raw bitmaps from the
 Windows clipboard, and `Alt+V` is WSL-only. Screenshots therefore never arrive.
 Pasting a file *path* as text is the documented-by-behavior reliable route —
 clipwarp automates it.
 
-**Does this work with WSL?**
+### How do I paste a screenshot into Claude Code?
+
+With the watcher running: take the screenshot (`Win+Shift+S`, `PrtScn`,
+Lightshot...), then press `Ctrl+V` in Claude Code. Without the watcher: run
+`cw` after the screenshot, then `Ctrl+V`.
+
+### Does this work with WSL?
+
 Under WSL, Claude Code's own `Alt+V` usually works. clipwarp targets **native
 Windows** (Windows Terminal, PowerShell, cmd, VS Code terminal), where nothing
 else does.
 
-**Which tools does it work with?**
+### Which screenshot tools are supported?
+
 Anything that puts an image on the Windows clipboard: Snipping Tool,
 `Win+Shift+S`, `PrtScn`, Lightshot, ShareX, Greenshot, Flameshot, browser
 "Copy image", Explorer file copies, Photoshop, etc.
 
-**Is anything uploaded anywhere?**
+### Is my screenshot uploaded anywhere?
+
 No. clipwarp is a single local PowerShell script — the image is written to a
 folder in your user profile and its path is put on your clipboard. Nothing
 touches the network.
 
-**Why not hook `Ctrl+V` directly?**
+### Why not hook `Ctrl+V` directly?
+
 Claude Code's TUI captures the keyboard, so PSReadLine key bindings can't fire
 while it's focused. Rewriting the clipboard — manually with `cw`, or
 automatically with `clipwarp watch` — is the reliable bridge.
