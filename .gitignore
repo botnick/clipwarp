@@ -1,0 +1,9 @@
+# Saved paste images (never commit these)
+pasted-images/
+clip-*.png
+
+# OS / editor cruft
+Thumbs.db
+desktop.ini
+.vs/
+*.user

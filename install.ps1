@@ -1,0 +1,69 @@
+<#
+    clipwarp installer.
+
+    Works two ways:
+      * One-command (remote):  irm https://raw.githubusercontent.com/botnick/clipwarp/main/install.ps1 | iex
+      * From a clone:          git clone https://github.com/botnick/clipwarp; .\clipwarp\install.ps1
+
+    It installs clipwarp.ps1 to %USERPROFILE%\.claude\scripts and registers a
+    `clipwarp` function in your all-hosts PowerShell profile so you can call it
+    from any terminal. Idempotent: safe to re-run to update.
+#>
+
+# GitHub's raw host requires TLS 1.2 on Windows PowerShell 5.1.
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+
+$RawBaseUrl = if ($env:CLIPWARP_RAW_BASE) { $env:CLIPWARP_RAW_BASE } else { 'https://raw.githubusercontent.com/botnick/clipwarp/main' }
+
+$scriptsDir = Join-Path $HOME '.claude\scripts'
+New-Item -ItemType Directory -Force -Path $scriptsDir | Out-Null
+
+# Prefer local copies (run from a git clone); otherwise download (irm | iex).
+foreach ($name in @('clipwarp.ps1', 'clipwarp-watch.ps1')) {
+    $target   = Join-Path $scriptsDir $name
+    $localSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot $name } else { $null }
+    if ($localSrc -and (Test-Path -LiteralPath $localSrc)) {
+        Copy-Item -LiteralPath $localSrc -Destination $target -Force
+        Write-Host "installed $name (local) -> $target" -ForegroundColor Green
+    }
+    else {
+        $url = "$RawBaseUrl/$name"
+        Invoke-WebRequest -Uri $url -OutFile $target -UseBasicParsing
+        Write-Host "downloaded $name -> $target" -ForegroundColor Green
+    }
+}
+
+# Register the `clipwarp` function in the all-hosts profile (idempotent).
+$profilePath = $PROFILE.CurrentUserAllHosts
+$profileDir  = Split-Path $profilePath
+if (-not (Test-Path $profileDir))  { New-Item -ItemType Directory -Force -Path $profileDir | Out-Null }
+if (-not (Test-Path $profilePath)) { New-Item -ItemType File -Path $profilePath | Out-Null }
+
+$marker  = '# >>> clipwarp (Claude Code image paste helper) >>>'
+$content = Get-Content -LiteralPath $profilePath -Raw -ErrorAction SilentlyContinue
+if ($content -and $content.Contains($marker)) {
+    Write-Host "profile already registers clipwarp -> $profilePath" -ForegroundColor DarkGray
+}
+else {
+    $block = @"
+
+$marker
+function clipwarp { & "`$HOME\.claude\scripts\clipwarp.ps1" @args }
+# <<< clipwarp <<<
+"@
+    Add-Content -LiteralPath $profilePath -Value $block -Encoding UTF8
+    Write-Host "registered clipwarp function -> $profilePath" -ForegroundColor Green
+}
+
+# Load into the current session so it works immediately.
+try { . $profilePath } catch {}
+
+Write-Host ""
+Write-Host "clipwarp installed. Usage:" -ForegroundColor Cyan
+Write-Host "  1) snip or Ctrl+C an image anywhere (Win+Shift+S, Lightshot, browser...)"
+Write-Host "  2) run             clipwarp"
+Write-Host "  3) in Claude Code  press Ctrl+V"
+Write-Host ""
+Write-Host "Auto mode (no step 2): run 'clipwarp watch' once - then plain Ctrl+C -> Ctrl+V." -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Open a NEW terminal (or run '. `$PROFILE') if 'clipwarp' isn't found yet." -ForegroundColor DarkGray

@@ -1,0 +1,546 @@
+<#
+.SYNOPSIS
+    clipwarp - Turn a clipboard image into a file path that Claude Code can attach.
+
+.DESCRIPTION
+    Claude Code on native Windows cannot read a raw bitmap pasted from the
+    clipboard (Snipping Tool / Win+Shift+S / browser "copy image"). It CAN read
+    an image file path pasted as text. This script bridges the two:
+
+      1. Reads whatever image is on the clipboard, whatever format the source
+         app used:
+           - an image FILE copied in Explorer            (CF_HDROP)
+           - a PNG stream ("PNG" / "image/png")          (Lightshot, Chrome, Firefox, Discord, ...)
+           - a standard bitmap                           (CF_BITMAP / CF_DIB - Snipping Tool)
+           - an alpha bitmap                             (CF_DIBV5 / Format17)
+           - HTML with an embedded data: URI or file:/// (browser fallback)
+           - plain text that is already an image path
+      2. Saves it as a PNG under the output folder (unless it is already a file).
+      3. Puts that file path on the clipboard as TEXT.
+
+    Then, back in Claude Code, Ctrl+V pastes the path and Claude auto-attaches
+    the image. Windows Terminal pastes text fine, so nothing is intercepted.
+
+.PARAMETER Command
+    convert (default) - do one clipboard conversion now.
+    watch | stop | status - control the background watcher (clipwarp-watch.ps1)
+    that converts automatically on every copy, so plain Ctrl+C -> Ctrl+V works.
+
+.PARAMETER OutDir
+    Folder for saved PNGs. Default: %USERPROFILE%\.claude\pasted-images
+
+.PARAMETER Quiet
+    Suppress the human-readable status lines (still prints the path).
+
+.PARAMETER KeepImage
+    Write the path as text AND keep the original image on the clipboard
+    (dual format): Claude Code pastes the path, image editors still paste the
+    image. Used by the watcher; harmless to use manually.
+
+.EXAMPLE
+    # snip with Win+Shift+S / Lightshot / anything, then:
+    clipwarp
+    # -> path is now on the clipboard; go to Claude Code and press Ctrl+V
+
+.EXAMPLE
+    clipwarp watch
+    # -> from now on just Ctrl+C an image anywhere, then Ctrl+V in Claude Code
+#>
+[CmdletBinding()]
+param(
+    [Parameter(Position = 0)]
+    [ValidateSet('convert', 'watch', 'stop', 'status', 'autostart', 'unautostart')]
+    [string]$Command = 'convert',
+    [string]$OutDir = (Join-Path $env:USERPROFILE '.claude\pasted-images'),
+    [switch]$Quiet,
+    [switch]$KeepImage
+)
+
+if ($Command -ne 'convert') {
+    $watcherScript = Join-Path $PSScriptRoot 'clipwarp-watch.ps1'
+    if (-not (Test-Path -LiteralPath $watcherScript)) {
+        Write-Host 'clipwarp: clipwarp-watch.ps1 not found next to clipwarp.ps1 - re-run install.ps1.' -ForegroundColor Yellow
+        exit 1
+    }
+    switch ($Command) {
+        'watch'       { & $watcherScript }
+        'stop'        { & $watcherScript -Stop }
+        'status'      { & $watcherScript -Status }
+        'autostart'   { & $watcherScript -Autostart }
+        'unautostart' { & $watcherScript -NoAutostart }
+    }
+    exit $LASTEXITCODE
+}
+
+# All clipboard access must run on an STA thread. Windows PowerShell 5.1's
+# console host is STA, but pwsh 7 defaults to MTA, so we always marshal the
+# work onto a dedicated STA runspace to behave identically in both.
+$work = {
+    param($OutDir, $KeepImage)
+
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    Add-Type -Namespace ClipwarpNative -Name Clip -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern uint GetClipboardSequenceNumber();
+'@
+
+    # General BITFIELDS decoder: map arbitrary R/G/B/A channel masks into BGRA.
+    # Used for the (rare) non-canonical 32bpp case that neither the fast memcpy
+    # path nor GDI+ (which can't parse BITMAPV5HEADER+BITFIELDS) handles. Written
+    # in C# to avoid a slow per-pixel PowerShell loop; no C#7 features so it
+    # compiles under Windows PowerShell 5.1's bundled compiler too.
+    Add-Type -Namespace ClipwarpNative -Name Dib -MemberDefinition @'
+public static int Shift(uint m){ if(m==0)return 0; int s=0; while(((m>>s)&1)==0)s++; return s; }
+public static int Width(uint m){ int c=0; while(m!=0){ c+=(int)(m&1u); m>>=1; } return c; }
+public static byte[] DecodeMasked(byte[] dib, int srcOff, int w, int absH, int stride, bool bottomUp, uint rM, uint gM, uint bM, uint aM){
+    int rS=Shift(rM), gS=Shift(gM), bS=Shift(bM), aS=Shift(aM);
+    int rMax=(1<<Width(rM))-1, gMax=(1<<Width(gM))-1, bMax=(1<<Width(bM))-1, aW=Width(aM); int aMax=(1<<aW)-1;
+    if(rMax<1)rMax=1; if(gMax<1)gMax=1; if(bMax<1)bMax=1; if(aMax<1)aMax=1;
+    byte[] outb = new byte[w*4*absH];
+    for(int y=0;y<absH;y++){
+        int srcRow = bottomUp ? (absH-1-y) : y;
+        int ro = srcOff + srcRow*stride;
+        int wo = y*w*4;
+        for(int x=0;x<w;x++){
+            uint px = System.BitConverter.ToUInt32(dib, ro + x*4);
+            int rv = (int)(((px & rM)>>rS)*255u/(uint)rMax);
+            int gv = (int)(((px & gM)>>gS)*255u/(uint)gMax);
+            int bv = (int)(((px & bM)>>bS)*255u/(uint)bMax);
+            int av = (aM==0) ? 255 : (int)(((px & aM)>>aS)*255u/(uint)aMax);
+            int o = wo + x*4;
+            outb[o]=(byte)bv; outb[o+1]=(byte)gv; outb[o+2]=(byte)rv; outb[o+3]=(byte)av;
+        }
+    }
+    return outb;
+}
+'@
+
+    # Snapshot the clipboard's change counter now. If it changes before we
+    # publish (a newer image was copied while we were converting - the watcher's
+    # A-then-B race), we must NOT overwrite it with this older result.
+    $seq0 = [ClipwarpNative.Clip]::GetClipboardSequenceNumber()
+
+    $out = [pscustomobject]@{ Path = $null; Kind = $null; Error = $null }
+
+    # Clipboard calls fail with an ExternalException ("OpenClipboard failed")
+    # whenever another app is holding the clipboard open at that instant - a
+    # very common transient on a busy desktop. Retry briefly before giving up.
+    # Reads pass -ThrowOnFail:$false and treat $null as "not available".
+    # Writes pass -ThrowOnFail so an exhausted retry is a real failure, not a
+    # silent success (SetText returns void, so null alone can't tell them apart).
+    function Invoke-Retry {
+        param([scriptblock]$Action, [int]$Tries = 10, [int]$Delay = 100, [switch]$ThrowOnFail)
+        $err = $null
+        for ($i = 0; $i -lt $Tries; $i++) {
+            try { return (& $Action) } catch { $err = $_; Start-Sleep -Milliseconds $Delay }
+        }
+        if ($ThrowOnFail) { throw ($err.Exception.Message) }
+        return $null
+    }
+
+    # Retry a single-attempt clipboard WRITE, re-checking the sequence number
+    # before EACH attempt. This closes the TOCTOU where a one-shot 4-arg
+    # SetDataObject would keep retrying across ~1s and, after a newer copy (B)
+    # released the clipboard, still land the stale (A) write on top of B. If the
+    # clipboard changed since we read our source, abort (watcher mode only).
+    function Set-ClipboardChecked {
+        param([scriptblock]$WriteOnce)
+        for ($i = 0; $i -lt 10; $i++) {
+            if ($KeepImage -and $seq0 -ne 0) {
+                $now = [ClipwarpNative.Clip]::GetClipboardSequenceNumber()
+                if ($now -ne 0 -and $now -ne $seq0) { throw 'clipboard-changed' }
+            }
+            try { & $WriteOnce; return } catch { Start-Sleep -Milliseconds 100 }
+        }
+        throw 'clipboard write failed after retries'
+    }
+
+    # Put the result on the clipboard. Plain mode: text only (the path).
+    # -KeepImage mode: DUAL format - text path for Claude Code, plus the
+    # original image/file so pasting into image-aware apps keeps working.
+    function Publish-Result {
+        param([string]$Path, $Img, [byte[]]$PngBytes, [string]$DropFile)
+        try {
+            if ($KeepImage) {
+                $do = New-Object System.Windows.Forms.DataObject
+                $do.SetData([System.Windows.Forms.DataFormats]::UnicodeText, $Path)
+                if ($PngBytes) {
+                    $do.SetData('PNG', (New-Object System.IO.MemoryStream (,$PngBytes)))
+                    if (-not $Img) {
+                        try { $Img = [System.Drawing.Image]::FromStream((New-Object System.IO.MemoryStream (,$PngBytes))) } catch {}
+                    }
+                }
+                if ($Img) { $do.SetImage($Img) }
+                if ($DropFile) {
+                    $sc = New-Object System.Collections.Specialized.StringCollection
+                    [void]$sc.Add($DropFile)
+                    $do.SetFileDropList($sc)
+                }
+                Set-ClipboardChecked { [System.Windows.Forms.Clipboard]::SetDataObject($do, $true) }
+            }
+            else {
+                Set-ClipboardChecked { [System.Windows.Forms.Clipboard]::SetText($Path) }
+            }
+        }
+        finally {
+            if ($Img) { $Img.Dispose() }
+        }
+    }
+
+    function New-OutPath {
+        if (-not (Test-Path -LiteralPath $OutDir)) {
+            New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+        }
+        Join-Path $OutDir ('clip-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.png')
+    }
+
+    # Claude Code attaches png/jpg/jpeg/gif/webp but NOT bmp, so transcode a
+    # .bmp source file to PNG. Returns the new PNG path (via -out ref-like object)
+    # or $null on failure. Reads through a byte[] so the source file isn't locked.
+    function ConvertTo-PngFile {
+        param([string]$SrcFile)
+        try {
+            $bytes = [System.IO.File]::ReadAllBytes($SrcFile)
+            $im = [System.Drawing.Image]::FromStream((New-Object System.IO.MemoryStream (,$bytes)))
+            $path = New-OutPath
+            $im.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+            return @{ Path = $path; Img = $im }
+        } catch { return $null }
+    }
+
+    function Read-StreamBytes ($obj) {
+        if ($obj -is [System.IO.MemoryStream]) { return $obj.ToArray() }
+        if ($obj -is [System.IO.Stream]) {
+            $ms = New-Object System.IO.MemoryStream
+            $obj.CopyTo($ms)
+            return $ms.ToArray()
+        }
+        if ($obj -is [byte[]]) { return $obj }
+        return $null
+    }
+
+    $data = Invoke-Retry { [System.Windows.Forms.Clipboard]::GetDataObject() }
+
+    # --- 1. A real image FILE on the clipboard (Ctrl+C on a .png in Explorer) ---
+    if (Invoke-Retry { [System.Windows.Forms.Clipboard]::ContainsFileDropList() }) {
+        foreach ($f in [System.Windows.Forms.Clipboard]::GetFileDropList()) {
+            if ($f -match '\.(png|jpe?g|gif|webp)$') {
+                Publish-Result -Path $f -DropFile $f
+                $out.Path = $f
+                $out.Kind = 'file'
+                return $out
+            }
+            if ($f -match '\.bmp$') {
+                $c = ConvertTo-PngFile $f
+                if ($c) {
+                    Publish-Result -Path $c.Path -Img $c.Img
+                    $out.Path = $c.Path
+                    $out.Kind = 'file-bmp'
+                    return $out
+                }
+            }
+        }
+    }
+
+    # --- 2. A raw PNG stream (Lightshot, Chrome, Firefox, Discord, ShareX...) ---
+    # Best fidelity: the source app's own PNG encode, alpha preserved.
+    if ($data) {
+        foreach ($fmt in @('PNG', 'image/png')) {
+            if ($data.GetDataPresent($fmt)) {
+                $bytes = Read-StreamBytes ($data.GetData($fmt))
+                # PNG signature: 89 50 4E 47
+                if ($bytes -and $bytes.Length -gt 8 -and
+                    $bytes[0] -eq 0x89 -and $bytes[1] -eq 0x50 -and $bytes[2] -eq 0x4E -and $bytes[3] -eq 0x47) {
+                    $path = New-OutPath
+                    [System.IO.File]::WriteAllBytes($path, $bytes)
+                    Publish-Result -Path $path -PngBytes $bytes
+                    $out.Path = $path
+                    $out.Kind = 'png-stream'
+                    return $out
+                }
+            }
+        }
+    }
+
+    # --- 3. A standard bitmap (Snipping Tool, Win+Shift+S; CF_BITMAP/CF_DIB) ---
+    if (Invoke-Retry { [System.Windows.Forms.Clipboard]::ContainsImage() }) {
+        $img = Invoke-Retry { [System.Windows.Forms.Clipboard]::GetImage() }
+        if ($img) {
+            $path = New-OutPath
+            $img.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+            Publish-Result -Path $path -Img $img
+            $out.Path = $path
+            $out.Kind = 'bitmap'
+            return $out
+        }
+    }
+
+    # --- 4. CF_DIBV5 / Format17 only (alpha-aware apps; GetImage misses these) ---
+    # GDI+ chokes on BITMAPV5HEADER + BI_BITFIELDS streams, so decode the common
+    # 32bpp case by hand and only fall back to a GDI+ BMP-wrap for the rest.
+    if ($data) {
+        foreach ($fmt in @('Format17', [System.Windows.Forms.DataFormats]::Dib)) {
+            if (-not $data.GetDataPresent($fmt)) { continue }
+            $dib = Read-StreamBytes ($data.GetData($fmt))
+            if (-not $dib -or $dib.Length -lt 40) { continue }
+            try {
+                $biSize        = [BitConverter]::ToUInt32($dib, 0)
+                $w             = [BitConverter]::ToInt32($dib, 4)
+                $h             = [BitConverter]::ToInt32($dib, 8)
+                $biBitCount    = [BitConverter]::ToUInt16($dib, 14)
+                $biCompression = [BitConverter]::ToUInt32($dib, 16)
+                $biClrUsed     = [BitConverter]::ToUInt32($dib, 32)
+                # BI_BITFIELDS carries R/G/B (and, for V4/V5, A) channel masks.
+                # For a size-40 header they sit right after it (offset 40/44/48);
+                # V4/V5 headers embed them at the same offsets, plus alpha at 52.
+                # We only hand-decode the canonical BGRA layout - anything else is
+                # left to GDI+ (below), which honors arbitrary masks correctly.
+                $rMask = 0; $gMask = 0; $bMask = 0; $alphaMask = 0
+                if ($biCompression -eq 3 -and $dib.Length -ge 52) {
+                    $rMask = [BitConverter]::ToUInt32($dib, 40)
+                    $gMask = [BitConverter]::ToUInt32($dib, 44)
+                    $bMask = [BitConverter]::ToUInt32($dib, 48)
+                }
+                if ($biSize -ge 108 -and $dib.Length -ge 56) { $alphaMask = [BitConverter]::ToUInt32($dib, 52) }
+                $canonicalBgra = $false
+                if ($biCompression -eq 0) {
+                    $canonicalBgra = $true                       # BI_RGB 32bpp == BGRx by definition
+                }
+                elseif ($biCompression -eq 3) {
+                    $canonicalBgra = ($rMask -eq 0x00FF0000 -and $gMask -eq 0x0000FF00 -and $bMask -eq 0x000000FF -and
+                                      ($alphaMask -eq [uint32]'0xFF000000' -or $alphaMask -eq 0))
+                }
+                $palette = 0
+                if ($biClrUsed -gt 0) { $palette = $biClrUsed * 4 }
+                elseif ($biBitCount -le 8) { $palette = [int][math]::Pow(2, $biBitCount) * 4 }
+                $masks = 0
+                if ($biCompression -eq 3 -and $biSize -eq 40) { $masks = 12 }  # BI_BITFIELDS with plain BITMAPINFOHEADER
+                $srcOff = [int]($biSize + $masks + $palette)
+                $img = $null
+
+                if ($biBitCount -eq 32 -and $canonicalBgra -and $w -gt 0 -and $h -ne 0) {
+                    # Manual decode: canonical BGRA rows, 4-byte aligned by construction.
+                    $absH = [math]::Abs($h)
+                    $stride = $w * 4
+                    $need = $srcOff + $stride * $absH
+                    if ($dib.Length -lt $need) {
+                        # Some OLE roundtrips shave a few trailing bytes; zero-pad.
+                        $padded = New-Object byte[] $need
+                        [Array]::Copy($dib, $padded, $dib.Length)
+                        $dib = $padded
+                    }
+                    # Decide whether these 32bpp pixels actually carry alpha.
+                    # Scans are bounded to $need (pixel data) so trailing V5
+                    # bytes - e.g. an embedded ICC profile - never skew the test.
+                    $forceOpaque = $false
+                    if ($biCompression -eq 3 -and $biSize -eq 40) {
+                        $forceOpaque = $true                       # BITFIELDS w/ only R,G,B masks: no alpha
+                    }
+                    elseif ($biSize -ge 108 -and $alphaMask -eq 0) {
+                        $forceOpaque = $true                       # V4/V5 explicitly declares no alpha
+                    }
+                    elseif ($biCompression -eq 0) {
+                        # BI_RGB: the 4th byte is officially undefined. If not one
+                        # pixel sets it, the source meant opaque (xBGR) - force
+                        # A=255 or the PNG comes out fully transparent.
+                        $anyAlpha = $false
+                        for ($i = $srcOff + 3; $i -lt $need; $i += 4) {
+                            if ($dib[$i] -ne 0) { $anyAlpha = $true; break }
+                        }
+                        if (-not $anyAlpha) { $forceOpaque = $true }
+                    }
+                    if ($forceOpaque) {
+                        for ($i = $srcOff + 3; $i -lt $need; $i += 4) { $dib[$i] = 255 }
+                    }
+                    $bmp = New-Object System.Drawing.Bitmap $w, $absH, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+                    $rect = New-Object System.Drawing.Rectangle 0, 0, $w, $absH
+                    $bd = $bmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::WriteOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+                    for ($y = 0; $y -lt $absH; $y++) {
+                        $srcRow = $y                                  # top-down (negative height)
+                        if ($h -gt 0) { $srcRow = $absH - 1 - $y }    # bottom-up (positive height)
+                        [System.Runtime.InteropServices.Marshal]::Copy($dib, $srcOff + $srcRow * $stride, [IntPtr]($bd.Scan0.ToInt64() + $y * $bd.Stride), $stride)
+                    }
+                    $bmp.UnlockBits($bd)
+                    $img = $bmp
+                }
+                elseif ($biBitCount -eq 32 -and $biCompression -eq 3 -and $w -gt 0 -and $h -ne 0) {
+                    # Non-canonical BITFIELDS masks: GDI+ can't parse
+                    # BITMAPV5HEADER+BITFIELDS, so decode the channels ourselves.
+                    $absH = [math]::Abs($h)
+                    $stride = $w * 4
+                    $need = $srcOff + $stride * $absH
+                    if ($dib.Length -lt $need) {
+                        $padded = New-Object byte[] $need
+                        [Array]::Copy($dib, $padded, $dib.Length)
+                        $dib = $padded
+                    }
+                    $bgra = [ClipwarpNative.Dib]::DecodeMasked($dib, $srcOff, $w, $absH, $stride, ($h -gt 0), [uint32]$rMask, [uint32]$gMask, [uint32]$bMask, [uint32]$alphaMask)
+                    $bmp = New-Object System.Drawing.Bitmap $w, $absH, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+                    $rect = New-Object System.Drawing.Rectangle 0, 0, $w, $absH
+                    $bd = $bmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::WriteOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+                    for ($y = 0; $y -lt $absH; $y++) {
+                        [System.Runtime.InteropServices.Marshal]::Copy($bgra, $y * $stride, [IntPtr]($bd.Scan0.ToInt64() + $y * $bd.Stride), $stride)
+                    }
+                    $bmp.UnlockBits($bd)
+                    $img = $bmp
+                }
+                else {
+                    # Everything else: wrap in a BITMAPFILEHEADER and let GDI+ try.
+                    $ms = New-Object System.IO.MemoryStream
+                    $bw = New-Object System.IO.BinaryWriter $ms
+                    $bw.Write([byte]0x42); $bw.Write([byte]0x4D)     # 'BM'
+                    $bw.Write([uint32](14 + $dib.Length))             # bfSize
+                    $bw.Write([uint16]0); $bw.Write([uint16]0)        # reserved
+                    $bw.Write([uint32](14 + $srcOff))                 # bfOffBits
+                    $bw.Write($dib)
+                    $bw.Flush(); $ms.Position = 0
+                    $img = [System.Drawing.Image]::FromStream($ms)
+                }
+
+                if ($img) {
+                    $path = New-OutPath
+                    $img.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+                    Publish-Result -Path $path -Img $img
+                    $out.Path = $path
+                    $out.Kind = 'dibv5'
+                    return $out
+                }
+            } catch { }
+        }
+    }
+
+    # --- 5. HTML with an embedded image (browser "copy image" fallback) ---
+    if ($data -and $data.GetDataPresent([System.Windows.Forms.DataFormats]::Html)) {
+        $html = [string]$data.GetData([System.Windows.Forms.DataFormats]::Html)
+        if ($html) {
+            $m = [regex]::Match($html, 'data:image/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=\s]+)')
+            if ($m.Success) {
+                try {
+                    $bytes = [Convert]::FromBase64String(($m.Groups[2].Value -replace '\s', ''))
+                    $ext = $m.Groups[1].Value -replace 'jpg', 'jpeg'
+                    $path = New-OutPath
+                    if ($ext -ne 'png') { $path = $path -replace '\.png$', ".$ext" }
+                    [System.IO.File]::WriteAllBytes($path, $bytes)
+                    if ($ext -eq 'png') {
+                        Publish-Result -Path $path -PngBytes $bytes
+                    }
+                    else {
+                        $im = $null
+                        try { $im = [System.Drawing.Image]::FromStream((New-Object System.IO.MemoryStream (,$bytes))) } catch {}
+                        Publish-Result -Path $path -Img $im
+                    }
+                    $out.Path = $path
+                    $out.Kind = 'html-data'
+                    return $out
+                } catch { }
+            }
+            $m = [regex]::Match($html, 'src\s*=\s*["'']file:///([^"''\s>]+)')
+            if ($m.Success) {
+                $p = [Uri]::UnescapeDataString($m.Groups[1].Value) -replace '/', '\'
+                if ($p -match '\.(png|jpe?g|gif|webp)$' -and (Test-Path -LiteralPath $p)) {
+                    Publish-Result -Path $p -DropFile $p
+                    $out.Path = $p
+                    $out.Kind = 'file'
+                    return $out
+                }
+                if ($p -match '\.bmp$' -and (Test-Path -LiteralPath $p)) {
+                    $c = ConvertTo-PngFile $p
+                    if ($c) {
+                        Publish-Result -Path $c.Path -Img $c.Img
+                        $out.Path = $c.Path
+                        $out.Kind = 'file-bmp'
+                        return $out
+                    }
+                }
+            }
+        }
+    }
+
+    # --- 6. Plain text that is already a path to an image file ---
+    $txt = Invoke-Retry { [System.Windows.Forms.Clipboard]::GetText() }
+    if ($txt) {
+        $p = $txt.Trim().Trim('"').Trim("'")
+        if ($p -match '\.(png|jpe?g|gif|webp)$' -and (Test-Path -LiteralPath $p)) {
+            Publish-Result -Path $p
+            $out.Path = $p
+            $out.Kind = 'file'
+            return $out
+        }
+        if ($p -match '\.bmp$' -and (Test-Path -LiteralPath $p)) {
+            $c = ConvertTo-PngFile $p
+            if ($c) {
+                Publish-Result -Path $c.Path -Img $c.Img
+                $out.Path = $c.Path
+                $out.Kind = 'file-bmp'
+                return $out
+            }
+        }
+    }
+
+    $out.Error = 'no-image'
+    return $out
+}
+
+$rs = [runspacefactory]::CreateRunspace()
+$rs.ApartmentState = 'STA'
+$rs.ThreadOptions = 'ReuseThread'
+$rs.Open()
+$ps = [powershell]::Create()
+$ps.Runspace = $rs
+[void]$ps.AddScript($work).AddArgument($OutDir).AddArgument([bool]$KeepImage)
+$writeErr = $null
+$changed  = $false
+try { $invoked = $ps.Invoke() }
+catch {
+    if ($_.Exception.Message -match 'clipboard-changed') { $changed = $true }
+    else { $writeErr = $_.Exception.Message }
+    $invoked = @()
+}
+finally { $ps.Dispose(); $rs.Close(); $rs.Dispose() }
+
+$r = $invoked | Where-Object { $_ -is [pscustomobject] } | Select-Object -Last 1
+
+if ($changed) {
+    # A newer image landed on the clipboard mid-conversion; we deliberately
+    # skipped overwriting it. Not an error - the watcher handles the new one.
+    if (-not $Quiet) { Write-Host 'clipwarp: clipboard changed mid-convert - skipped (newer image will be handled).' -ForegroundColor DarkGray }
+    exit 0
+}
+
+if ($writeErr -or ($r -and $r.Error -eq 'clipboard-write')) {
+    $msg = if ($writeErr) { $writeErr } else { $r.Error }
+    Write-Host "clipwarp: could not write to the clipboard ($msg). Another app may be holding it - try again." -ForegroundColor Red
+    exit 1
+}
+
+if (-not $r -or $r.Error -eq 'no-image' -or -not $r.Path) {
+    Write-Host 'clipwarp: no image on the clipboard.' -ForegroundColor Yellow
+    Write-Host '  1) snip or copy an image in any app, then' -ForegroundColor DarkGray
+    Write-Host '  2) run clipwarp again.' -ForegroundColor DarkGray
+    exit 1
+}
+
+# Best-effort housekeeping: drop PNGs older than 7 days so the folder never grows unbounded.
+try {
+    Get-ChildItem -LiteralPath $OutDir -Filter 'clip-*.png' -ErrorAction Stop |
+        Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+} catch {}
+
+if (-not $Quiet) {
+    $verb = switch ($r.Kind) {
+        'file'       { 'using existing file' }
+        'file-bmp'   { 'transcoded BMP -> PNG ->' }
+        'png-stream' { 'saved PNG stream ->' }
+        'dibv5'      { 'saved DIBv5 bitmap ->' }
+        'html-data'  { 'extracted from HTML ->' }
+        default      { 'saved bitmap ->' }
+    }
+    Write-Host "clipwarp: $verb $($r.Path)" -ForegroundColor Green
+    Write-Host 'path copied to clipboard. Switch to Claude Code and press Ctrl+V.' -ForegroundColor Cyan
+}
+
+# Always emit the raw path last so it is usable in a pipeline too.
+$r.Path
+exit 0
