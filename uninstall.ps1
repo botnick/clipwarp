@@ -17,12 +17,18 @@ $pidFile     = Join-Path $scriptsDir 'clipwarp-watch.pid'
 $startupLnk  = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\clipwarp-watch.lnk'
 $problems    = @()
 
-function Test-WatcherRunning {
-    if (-not (Test-Path -LiteralPath $pidFile)) { return $false }
+function Get-WatcherPid {
+    # Returns the PID only if the pid file points at a live process whose command
+    # line is actually clipwarp-watch (never a reused PID on an unrelated shell).
+    if (-not (Test-Path -LiteralPath $pidFile)) { return $null }
     $wp = 0
-    if (-not [int]::TryParse((Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1), [ref]$wp)) { return $false }
+    if (-not [int]::TryParse((Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1), [ref]$wp)) { return $null }
     $p = Get-Process -Id $wp -ErrorAction SilentlyContinue
-    return [bool]($p -and $p.ProcessName -match 'powershell|pwsh')
+    if (-not ($p -and $p.ProcessName -match 'powershell|pwsh')) { return $null }
+    $cmd = $null
+    try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$wp" -ErrorAction SilentlyContinue).CommandLine } catch {}
+    if ($cmd -match 'clipwarp-watch') { return $wp }
+    return $null
 }
 
 # 1. Stop the watcher and disable autostart (needs the watcher script present).
@@ -30,13 +36,11 @@ if (Test-Path -LiteralPath $watchScript) {
     try { & $watchScript -Stop        | Out-Null } catch { $problems += "stop watcher: $($_.Exception.Message)" }
     try { & $watchScript -NoAutostart | Out-Null } catch { $problems += "disable autostart: $($_.Exception.Message)" }
 }
-# Verify it actually stopped; force-kill by pid as a fallback.
-if (Test-WatcherRunning) {
-    $wp = 0
-    if ([int]::TryParse((Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1), [ref]$wp)) {
-        try { Stop-Process -Id $wp -Force -ErrorAction Stop } catch {}
-    }
-    if (Test-WatcherRunning) { $problems += "watcher is still running (pid file: $pidFile)" }
+# Verify it actually stopped; force-kill the verified watcher pid as a fallback.
+$wpid = Get-WatcherPid
+if ($wpid) {
+    try { Stop-Process -Id $wpid -Force -ErrorAction Stop } catch { $problems += "kill watcher pid ${wpid}: $($_.Exception.Message)" }
+    if (Get-WatcherPid) { $problems += "watcher is still running (pid file: $pidFile)" }
 }
 
 # 2. Remove the login-autostart shortcut directly (in case the script was gone).
@@ -52,7 +56,6 @@ if     ($cur -match '\\WindowsPowerShell\\profile\.ps1$') { $profilePaths += ($c
 elseif ($cur -match '\\PowerShell\\profile\.ps1$')        { $profilePaths += ($cur -replace '\\PowerShell\\profile\.ps1$', '\WindowsPowerShell\profile.ps1') }
 $profilePaths = $profilePaths | Select-Object -Unique
 
-$profileClean = $true
 foreach ($profilePath in $profilePaths) {
     if (-not (Test-Path -LiteralPath $profilePath)) { continue }
     try {
@@ -66,7 +69,7 @@ foreach ($profilePath in $profilePaths) {
         Set-Content -LiteralPath $profilePath -Value $kept -Encoding UTF8 -ErrorAction Stop
         Write-Host "removed clipwarp function from $profilePath" -ForegroundColor Green
     }
-    catch { $problems += "edit profile ${profilePath}: $($_.Exception.Message)"; $profileClean = $false }
+    catch { $problems += "edit profile ${profilePath}: $($_.Exception.Message)" }
 }
 
 # 4. Optionally purge saved images.
@@ -78,22 +81,31 @@ if ($PurgeImages) {
     }
 }
 
-# 5. Delete the installed scripts LAST — but only if the profile was cleaned, so a
-#    failed profile edit still has a working `clipwarp` + an uninstaller to retry.
-if ($profileClean) {
+# 5. Delete the installed scripts LAST — and only if EVERY prior step was clean, so
+#    any earlier failure leaves a working `clipwarp` + the uninstaller to retry.
+if ($problems.Count -eq 0) {
+    $removeOk = $true
     foreach ($name in @('clipwarp.ps1', 'clipwarp-watch.ps1', 'clipwarp-watch.pid', 'clipwarp-watch.log')) {
         $t = Join-Path $scriptsDir $name
         if (Test-Path -LiteralPath $t) {
             try { Remove-Item -LiteralPath $t -Force -ErrorAction Stop; Write-Host "removed $t" -ForegroundColor Green }
-            catch { $problems += "remove ${t}: $($_.Exception.Message)" }
+            catch { $problems += "remove ${t}: $($_.Exception.Message)"; $removeOk = $false }
         }
     }
-    # Delete this uninstaller itself, absolutely last (best effort).
-    $self = Join-Path $scriptsDir 'uninstall.ps1'
-    if (Test-Path -LiteralPath $self) { Remove-Item -LiteralPath $self -Force -ErrorAction SilentlyContinue }
+    # Delete this uninstaller itself, absolutely last, only if the rest succeeded.
+    if ($removeOk) {
+        $self = Join-Path $scriptsDir 'uninstall.ps1'
+        if (Test-Path -LiteralPath $self) {
+            try { Remove-Item -LiteralPath $self -Force -ErrorAction Stop }
+            catch { $problems += "remove uninstaller ${self}: $($_.Exception.Message)" }
+        }
+    }
+    else {
+        $problems += "some scripts could not be removed - kept the uninstaller so you can re-run it"
+    }
 }
 else {
-    $problems += "profile cleanup failed - kept the installed scripts so you can re-run the uninstaller"
+    $problems += "earlier steps did not complete cleanly - kept the installed scripts so you can re-run the uninstaller"
 }
 
 # 6. Honest final report.

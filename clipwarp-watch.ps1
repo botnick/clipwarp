@@ -42,7 +42,13 @@ function Get-WatchProcess {
     $watchPid = 0
     if (-not [int]::TryParse((Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1), [ref]$watchPid)) { return $null }
     $proc = Get-Process -Id $watchPid -ErrorAction SilentlyContinue
-    if ($proc -and $proc.ProcessName -match 'powershell|pwsh') { return $proc }
+    if (-not ($proc -and $proc.ProcessName -match 'powershell|pwsh')) { return $null }
+    # Guard against a reused PID: only treat it as our watcher if the command line
+    # is actually running clipwarp-watch (a stale pid file must never target an
+    # unrelated shell). If the command line can't be read, err on the safe side.
+    $cmd = $null
+    try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$watchPid" -ErrorAction SilentlyContinue).CommandLine } catch {}
+    if ($cmd -match 'clipwarp-watch') { return $proc }
     return $null
 }
 
