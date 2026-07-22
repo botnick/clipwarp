@@ -49,6 +49,7 @@ else {
 
 $marker
 function clipwarp { & "`$HOME\.claude\scripts\clipwarp.ps1" @args }
+Set-Alias cw clipwarp
 # <<< clipwarp <<<
 "@
     Add-Content -LiteralPath $profilePath -Value $block -Encoding UTF8
@@ -61,7 +62,7 @@ try { . $profilePath } catch {}
 Write-Host ""
 Write-Host "clipwarp installed. Usage:" -ForegroundColor Cyan
 Write-Host "  1) snip or Ctrl+C an image anywhere (Win+Shift+S, Lightshot, browser...)"
-Write-Host "  2) run             clipwarp"
+Write-Host "  2) run             clipwarp   (or just: cw)"
 Write-Host "  3) in Claude Code  press Ctrl+V"
 Write-Host ""
 Write-Host "Auto mode (no step 2): run 'clipwarp watch' once - then plain Ctrl+C -> Ctrl+V." -ForegroundColor Cyan

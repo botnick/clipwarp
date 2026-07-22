@@ -44,7 +44,7 @@ git clone https://github.com/botnick/clipwarp
 ```
 
 The installer copies `clipwarp.ps1` to `%USERPROFILE%\.claude\scripts` and registers
-a `clipwarp` function in your all-hosts PowerShell profile. Re-run it any time to
+a `clipwarp` function (plus a short `cw` alias) in your all-hosts PowerShell profile. Re-run it any time to
 update. Open a **new** terminal afterwards (or run `. $PROFILE`) so `clipwarp` is
 found.
 
@@ -57,7 +57,7 @@ is marshalled onto an STA thread internally).
    (or `Ctrl+C` an image file in Explorer).
 2. In a terminal, run:
    ```powershell
-   clipwarp
+   clipwarp    # or just: cw
    ```
 3. Switch to Claude Code and press `Ctrl+V`. The image attaches.
 
