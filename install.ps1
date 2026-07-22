@@ -19,7 +19,7 @@ $scriptsDir = Join-Path $HOME '.claude\scripts'
 New-Item -ItemType Directory -Force -Path $scriptsDir | Out-Null
 
 # Prefer local copies (run from a git clone); otherwise download (irm | iex).
-foreach ($name in @('clipwarp.ps1', 'clipwarp-watch.ps1')) {
+foreach ($name in @('clipwarp.ps1', 'clipwarp-watch.ps1', 'uninstall.ps1')) {
     $target   = Join-Path $scriptsDir $name
     $localSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot $name } else { $null }
     if ($localSrc -and (Test-Path -LiteralPath $localSrc)) {
@@ -33,31 +33,42 @@ foreach ($name in @('clipwarp.ps1', 'clipwarp-watch.ps1')) {
     }
 }
 
-# Register the `clipwarp` function in the all-hosts profile (idempotent).
-$profilePath = $PROFILE.CurrentUserAllHosts
-$profileDir  = Split-Path $profilePath
-if (-not (Test-Path $profileDir))  { New-Item -ItemType Directory -Force -Path $profileDir | Out-Null }
-if (-not (Test-Path $profilePath)) { New-Item -ItemType File -Path $profilePath | Out-Null }
-
-$marker  = '# >>> clipwarp (Claude Code image paste helper) >>>'
-$content = Get-Content -LiteralPath $profilePath -Raw -ErrorAction SilentlyContinue
-if ($content -and $content.Contains($marker)) {
-    Write-Host "profile already registers clipwarp -> $profilePath" -ForegroundColor DarkGray
-}
-else {
-    $block = @"
+# Register the `clipwarp` function in the all-hosts profile of BOTH PowerShell
+# editions (Windows PowerShell 5.1 and PowerShell 7), so the command works no
+# matter which edition ran the installer or which one you open later. Their
+# CurrentUserAllHosts profiles live in sibling folders (WindowsPowerShell vs
+# PowerShell) under the same Documents root.
+$marker = '# >>> clipwarp (Claude Code image paste helper) >>>'
+$block  = @"
 
 $marker
 function clipwarp { & "`$HOME\.claude\scripts\clipwarp.ps1" @args }
 Set-Alias cw clipwarp
 # <<< clipwarp <<<
 "@
-    Add-Content -LiteralPath $profilePath -Value $block -Encoding UTF8
-    Write-Host "registered clipwarp function -> $profilePath" -ForegroundColor Green
+
+$cur = $PROFILE.CurrentUserAllHosts
+$profilePaths = @($cur)
+if     ($cur -match '\\WindowsPowerShell\\profile\.ps1$') { $profilePaths += ($cur -replace '\\WindowsPowerShell\\profile\.ps1$', '\PowerShell\profile.ps1') }
+elseif ($cur -match '\\PowerShell\\profile\.ps1$')        { $profilePaths += ($cur -replace '\\PowerShell\\profile\.ps1$', '\WindowsPowerShell\profile.ps1') }
+$profilePaths = $profilePaths | Select-Object -Unique
+
+foreach ($profilePath in $profilePaths) {
+    $profileDir = Split-Path $profilePath
+    if (-not (Test-Path $profileDir))  { New-Item -ItemType Directory -Force -Path $profileDir | Out-Null }
+    if (-not (Test-Path $profilePath)) { New-Item -ItemType File -Path $profilePath | Out-Null }
+    $content = Get-Content -LiteralPath $profilePath -Raw -ErrorAction SilentlyContinue
+    if ($content -and $content.Contains($marker)) {
+        Write-Host "profile already registers clipwarp -> $profilePath" -ForegroundColor DarkGray
+    }
+    else {
+        Add-Content -LiteralPath $profilePath -Value $block -Encoding UTF8
+        Write-Host "registered clipwarp function -> $profilePath" -ForegroundColor Green
+    }
 }
 
 # Load into the current session so it works immediately.
-try { . $profilePath } catch {}
+try { . $cur } catch {}
 
 Write-Host ""
 Write-Host "clipwarp installed. Usage:" -ForegroundColor Cyan
