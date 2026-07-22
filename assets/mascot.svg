@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="260" height="260" role="img" aria-label="Warpy the peach — the clipwarp mascot">
+  <defs>
+    <radialGradient id="peachBody" cx="38%" cy="32%" r="75%">
+      <stop offset="0%" stop-color="#FFE0C2"/>
+      <stop offset="42%" stop-color="#FFB48A"/>
+      <stop offset="100%" stop-color="#FF8A66"/>
+    </radialGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#9BE7C4"/>
+      <stop offset="100%" stop-color="#4FBF9A"/>
+    </linearGradient>
+    <linearGradient id="warp" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7ED9C3" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#7ED9C3"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#FF7A59" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- warp motion swooshes -->
+  <g opacity="0.9">
+    <path d="M18 150 q40 -10 70 0" stroke="url(#warp)" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <path d="M12 176 q46 -12 82 -2" stroke="url(#warp)" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.7"/>
+  </g>
+
+  <!-- sparkles -->
+  <g fill="#FFC86B">
+    <path d="M206 54 l5 12 12 5 -12 5 -5 12 -5 -12 -12 -5 12 -5z"/>
+  </g>
+  <g fill="#FF7A9A">
+    <path d="M212 150 l3.5 8 8 3.5 -8 3.5 -3.5 8 -3.5 -8 -8 -3.5 8 -3.5z"/>
+  </g>
+  <circle cx="60" cy="70" r="4.5" fill="#7ED9C3"/>
+  <circle cx="196" cy="104" r="3.5" fill="#FFC86B"/>
+
+  <!-- stem + leaf -->
+  <path d="M132 44 q3 -18 -6 -28" stroke="#8A5A3C" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <path d="M132 40 q34 -26 58 -6 q-18 30 -58 12 z" fill="url(#leaf)"/>
+  <path d="M150 30 q16 6 28 18" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="3" stroke-linecap="round" fill="none"/>
+
+  <!-- peach body -->
+  <g filter="url(#soft)">
+    <path d="M130 58
+             C 92 58, 58 84, 58 132
+             C 58 186, 96 220, 130 220
+             C 164 220, 202 186, 202 132
+             C 202 84, 168 58, 130 58 Z" fill="url(#peachBody)"/>
+    <!-- center cleft -->
+    <path d="M130 66 C 122 96, 122 150, 130 206" stroke="#F0693F" stroke-opacity="0.35" stroke-width="6" stroke-linecap="round" fill="none"/>
+    <!-- glossy highlight -->
+    <ellipse cx="98" cy="106" rx="20" ry="26" fill="#FFFFFF" opacity="0.35" transform="rotate(-18 98 106)"/>
+  </g>
+
+  <!-- blush -->
+  <ellipse cx="96" cy="158" rx="15" ry="9" fill="#FF7A7A" opacity="0.38"/>
+  <ellipse cx="166" cy="158" rx="15" ry="9" fill="#FF7A7A" opacity="0.38"/>
+
+  <!-- eyes -->
+  <g>
+    <ellipse cx="106" cy="136" rx="11" ry="13" fill="#43302B"/>
+    <ellipse cx="156" cy="136" rx="11" ry="13" fill="#43302B"/>
+    <circle cx="110" cy="131" r="3.6" fill="#fff"/>
+    <circle cx="160" cy="131" r="3.6" fill="#fff"/>
+    <circle cx="103" cy="140" r="1.8" fill="#fff" opacity="0.8"/>
+    <circle cx="153" cy="140" r="1.8" fill="#fff" opacity="0.8"/>
+  </g>
+
+  <!-- smile -->
+  <path d="M118 158 q13 14 26 0" stroke="#43302B" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+</svg>

@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>clipwarp — paste clipboard images into Claude Code on Windows</title>
+<meta name="description" content="Fix Ctrl+V image paste in Claude Code on native Windows. Screenshot anywhere → Ctrl+V → image attached. One-command install, 100% local, MIT.">
+<link rel="icon" href="assets/mascot.svg" type="image/svg+xml">
+<meta property="og:title" content="clipwarp — paste screenshots into Claude Code on Windows">
+<meta property="og:description" content="Ctrl+C anywhere → Ctrl+V in Claude Code = image attached. One command, 100% local.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="assets/social-preview.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cream:#FFF7F0; --cream2:#FFEEE2;
+    --ink:#4A3B36; --muted:#94827A;
+    --peach:#FF8A66; --coral:#FF6F61; --peach-soft:#FFD9C6;
+    --mint:#57C9AB; --mint-soft:#DDF6ED;
+    --gold:#FFC24B;
+    --card:#FFFFFF;
+    --shadow:0 18px 40px rgba(255,122,89,.16);
+    --shadow-sm:0 8px 20px rgba(255,122,89,.14);
+    --radius:26px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; font-family:"Nunito",system-ui,sans-serif; color:var(--ink);
+    background:var(--cream); line-height:1.6; -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  h1,h2,h3,.brand{font-family:"Baloo 2",system-ui,sans-serif; line-height:1.15; margin:0}
+  a{color:inherit}
+  .wrap{max-width:1080px; margin:0 auto; padding:0 22px}
+  .pill{border-radius:999px}
+
+  /* nav */
+  nav{position:sticky; top:0; z-index:50; backdrop-filter:blur(10px);
+      background:rgba(255,247,240,.82); border-bottom:1px solid #ffe6d8}
+  .nav-in{display:flex; align-items:center; justify-content:space-between; padding:12px 22px; max-width:1080px; margin:0 auto}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:800; font-size:1.35rem; color:var(--ink)}
+  .brand svg{width:34px; height:34px}
+  .brand b{color:var(--coral)}
+  .nav-links{display:flex; align-items:center; gap:8px}
+  .nav-links a{padding:9px 15px; text-decoration:none; font-weight:700; color:var(--muted); border-radius:999px}
+  .nav-links a:hover{color:var(--ink); background:#fff0e6}
+  .btn{display:inline-flex; align-items:center; gap:9px; font-family:"Baloo 2"; font-weight:700;
+       text-decoration:none; border:none; cursor:pointer; border-radius:999px; transition:.18s transform,.18s box-shadow}
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:linear-gradient(135deg,var(--peach),var(--coral)); color:#fff; padding:13px 24px;
+       box-shadow:0 10px 22px rgba(255,111,97,.38); font-size:1.05rem}
+  .btn-primary:hover{transform:translateY(-2px); box-shadow:0 16px 30px rgba(255,111,97,.46)}
+  .btn-ghost{background:#fff; color:var(--ink); padding:12px 22px; box-shadow:var(--shadow-sm); font-size:1.02rem}
+  .btn-ghost:hover{transform:translateY(-2px)}
+
+  /* hero */
+  .hero{position:relative; padding:26px 0 40px; overflow:hidden}
+  .blob{position:absolute; border-radius:50%; filter:blur(6px); opacity:.55; z-index:0}
+  .b1{width:320px;height:320px;background:#FFE0CE; top:-90px; right:-70px}
+  .b2{width:260px;height:260px;background:var(--mint-soft); bottom:-80px; left:-80px; opacity:.7}
+  .b3{width:120px;height:120px;background:#FFF0C6; top:120px; left:52%}
+  .hero-grid{position:relative; z-index:1; display:grid; grid-template-columns:1.05fr .95fr; gap:26px; align-items:center}
+  .tag{display:inline-flex; align-items:center; gap:8px; background:var(--mint-soft); color:#2f8f74;
+       font-weight:800; padding:7px 15px; border-radius:999px; font-size:.86rem}
+  .tag .dot{width:8px;height:8px;border-radius:50%;background:var(--mint)}
+  h1{font-size:clamp(2.1rem,5vw,3.5rem); font-weight:800; margin:16px 0 12px; letter-spacing:-.5px}
+  h1 .hl{color:var(--coral)}
+  .sub{font-size:1.18rem; color:#6d5a52; max-width:34ch; margin:0 0 24px; font-weight:600}
+  .cta-row{display:flex; flex-wrap:wrap; gap:12px; align-items:center}
+  .microcopy{margin-top:14px; color:var(--muted); font-weight:700; font-size:.92rem; display:flex; gap:14px; flex-wrap:wrap}
+  .microcopy span{display:inline-flex; align-items:center; gap:6px}
+  .mascot-stage{position:relative; display:flex; justify-content:center; align-items:center}
+  .mascot-disc{position:absolute; width:330px; height:330px; border-radius:50%;
+       background:radial-gradient(circle at 50% 40%, #fff 0, #FFE7D8 60%, #FFDFCD 100%); box-shadow:var(--shadow)}
+  .mascot{position:relative; width:300px; height:300px; animation:float 5s ease-in-out infinite}
+  @keyframes float{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-14px) rotate(1.5deg)}}
+  @media (prefers-reduced-motion: reduce){.mascot{animation:none}}
+
+  /* install */
+  .install{position:relative; z-index:1; margin:6px auto 0; max-width:760px}
+  .install h3{font-size:1.15rem; text-align:center; color:var(--muted); font-weight:700; margin-bottom:12px}
+  .code{display:flex; align-items:center; gap:12px; background:#2b211d; color:#ffe9dd;
+        border-radius:18px; padding:16px 18px; box-shadow:var(--shadow); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  .code .prompt{color:#ff9f7e; font-weight:700}
+  .code code{flex:1; overflow-x:auto; white-space:nowrap; font-size:.98rem; padding-bottom:2px}
+  .copy{flex:none; background:#ff8a66; color:#fff; border:none; cursor:pointer; font-weight:800;
+        font-family:"Baloo 2"; padding:9px 16px; border-radius:12px; transition:.15s}
+  .copy:hover{background:#ff764e}
+  .copy.done{background:var(--mint)}
+
+  /* sections */
+  section.block{padding:56px 0}
+  .center{text-align:center}
+  .eyebrow{color:var(--coral); font-weight:800; letter-spacing:.12em; text-transform:uppercase; font-size:.8rem}
+  h2{font-size:clamp(1.7rem,3.6vw,2.5rem); font-weight:800; margin:8px 0 8px}
+  .lead{color:#6d5a52; font-weight:600; max-width:56ch; margin:0 auto}
+
+  /* steps */
+  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:34px}
+  .step{background:var(--card); border-radius:var(--radius); padding:26px 22px; box-shadow:var(--shadow-sm);
+        position:relative; text-align:center}
+  .step .n{position:absolute; top:-14px; left:50%; transform:translateX(-50%);
+        width:30px;height:30px; border-radius:50%; background:linear-gradient(135deg,var(--peach),var(--coral));
+        color:#fff; font-family:"Baloo 2"; font-weight:800; display:grid; place-items:center; box-shadow:0 6px 14px rgba(255,111,97,.4)}
+  .step .ico{font-size:2.2rem; margin:6px 0 8px}
+  .step h3{font-size:1.15rem; margin-bottom:4px}
+  .step p{margin:0; color:var(--muted); font-weight:600; font-size:.96rem}
+  .arrow{align-self:center; color:var(--peach-soft)}
+
+  /* features */
+  .feat{display:grid; grid-template-columns:repeat(2,1fr); gap:18px; margin-top:34px}
+  .card{background:var(--card); border-radius:var(--radius); padding:24px; box-shadow:var(--shadow-sm); display:flex; gap:16px}
+  .card .badge{flex:none; width:52px;height:52px;border-radius:16px; display:grid; place-items:center; font-size:1.6rem}
+  .badge.p{background:#FFE7DC}.badge.m{background:var(--mint-soft)}.badge.g{background:#FFF2CF}.badge.b{background:#E7F0FF}
+  .card h3{font-size:1.15rem; margin-bottom:3px}
+  .card p{margin:0; color:var(--muted); font-weight:600; font-size:.96rem}
+  .card code{background:#fff0e6; color:#c8543c; padding:1px 7px; border-radius:7px; font-weight:700; font-size:.85em}
+
+  /* strip */
+  .strip{background:linear-gradient(135deg,#fff4ec,#ffe9de); border-radius:32px; padding:34px; text-align:center; box-shadow:var(--shadow-sm)}
+  .tools{display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:16px}
+  .chip{background:#fff; border-radius:999px; padding:8px 16px; font-weight:700; color:#7a675f; box-shadow:0 4px 10px rgba(255,122,89,.1); font-size:.92rem}
+
+  /* final cta */
+  .final{background:linear-gradient(135deg,var(--peach),var(--coral)); border-radius:34px; padding:44px 28px;
+         text-align:center; color:#fff; box-shadow:var(--shadow); position:relative; overflow:hidden}
+  .final h2{color:#fff}
+  .final p{color:#fff; opacity:.94; font-weight:600; margin:6px auto 22px; max-width:44ch}
+  .final .btn-ghost{color:var(--coral)}
+  .final .mini{position:absolute; opacity:.9}
+
+  footer{padding:38px 0 60px; text-align:center; color:var(--muted); font-weight:600}
+  footer a{color:var(--coral); text-decoration:none; font-weight:800}
+  .foot-brand{display:flex; align-items:center; justify-content:center; gap:9px; margin-bottom:10px; font-family:"Baloo 2"; font-weight:800; font-size:1.2rem; color:var(--ink)}
+  .foot-brand svg{width:30px;height:30px}
+
+  @media (max-width:860px){
+    .hero-grid{grid-template-columns:1fr; text-align:center}
+    .sub{margin-left:auto;margin-right:auto}
+    .cta-row,.microcopy{justify-content:center}
+    .mascot-stage{order:-1; margin-bottom:6px}
+    .steps{grid-template-columns:1fr}
+    .feat{grid-template-columns:1fr}
+    .nav-links a.hidephone{display:none}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-in">
+    <a class="brand" href="#top" style="text-decoration:none">
+      <!-- mini mascot -->
+      <svg viewBox="0 0 260 260" aria-hidden="true"><use href="#peachMascot"/></svg>
+      clip<b>warp</b>
+    </a>
+    <div class="nav-links">
+      <a href="#how" class="hidephone">How it works</a>
+      <a href="#features" class="hidephone">Features</a>
+      <a class="btn btn-ghost" href="https://github.com/botnick/clipwarp" style="padding:9px 18px">★ GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<!-- reusable mascot symbol -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="peachMascot" viewBox="0 0 260 260">
+    <defs>
+      <radialGradient id="pBody" cx="38%" cy="32%" r="75%">
+        <stop offset="0%" stop-color="#FFE0C2"/><stop offset="42%" stop-color="#FFB48A"/><stop offset="100%" stop-color="#FF8A66"/>
+      </radialGradient>
+      <linearGradient id="pLeaf" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#9BE7C4"/><stop offset="100%" stop-color="#4FBF9A"/></linearGradient>
+      <linearGradient id="pWarp" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#7ED9C3" stop-opacity="0"/><stop offset="100%" stop-color="#7ED9C3"/></linearGradient>
+      <filter id="pSoft" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#FF7A59" flood-opacity="0.28"/></filter>
+    </defs>
+    <g opacity="0.9">
+      <path d="M18 150 q40 -10 70 0" stroke="url(#pWarp)" stroke-width="7" stroke-linecap="round" fill="none"/>
+      <path d="M12 176 q46 -12 82 -2" stroke="url(#pWarp)" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.7"/>
+    </g>
+    <path d="M206 54 l5 12 12 5 -12 5 -5 12 -5 -12 -12 -5 12 -5z" fill="#FFC86B"/>
+    <path d="M212 150 l3.5 8 8 3.5 -8 3.5 -3.5 8 -3.5 -8 -8 -3.5 8 -3.5z" fill="#FF7A9A"/>
+    <circle cx="60" cy="70" r="4.5" fill="#7ED9C3"/><circle cx="196" cy="104" r="3.5" fill="#FFC86B"/>
+    <path d="M132 44 q3 -18 -6 -28" stroke="#8A5A3C" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <path d="M132 40 q34 -26 58 -6 q-18 30 -58 12 z" fill="url(#pLeaf)"/>
+    <path d="M150 30 q16 6 28 18" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="3" stroke-linecap="round" fill="none"/>
+    <g filter="url(#pSoft)">
+      <path d="M130 58 C 92 58, 58 84, 58 132 C 58 186, 96 220, 130 220 C 164 220, 202 186, 202 132 C 202 84, 168 58, 130 58 Z" fill="url(#pBody)"/>
+      <path d="M130 66 C 122 96, 122 150, 130 206" stroke="#F0693F" stroke-opacity="0.35" stroke-width="6" stroke-linecap="round" fill="none"/>
+      <ellipse cx="98" cy="106" rx="20" ry="26" fill="#FFFFFF" opacity="0.35" transform="rotate(-18 98 106)"/>
+    </g>
+    <ellipse cx="96" cy="158" rx="15" ry="9" fill="#FF7A7A" opacity="0.38"/>
+    <ellipse cx="166" cy="158" rx="15" ry="9" fill="#FF7A7A" opacity="0.38"/>
+    <ellipse cx="106" cy="136" rx="11" ry="13" fill="#43302B"/><ellipse cx="156" cy="136" rx="11" ry="13" fill="#43302B"/>
+    <circle cx="110" cy="131" r="3.6" fill="#fff"/><circle cx="160" cy="131" r="3.6" fill="#fff"/>
+    <circle cx="103" cy="140" r="1.8" fill="#fff" opacity="0.8"/><circle cx="153" cy="140" r="1.8" fill="#fff" opacity="0.8"/>
+    <path d="M118 158 q13 14 26 0" stroke="#43302B" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+  </symbol>
+</svg>
+
+<a id="top"></a>
+<header class="hero">
+  <span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span>
+  <div class="wrap hero-grid">
+    <div>
+      <span class="tag"><span class="dot"></span> Works on native Windows 10 &amp; 11</span>
+      <h1>Paste screenshots into <span class="hl">Claude&nbsp;Code</span>, finally.</h1>
+      <p class="sub">On Windows, <code style="background:#fff0e6;color:#c8543c;padding:1px 7px;border-radius:7px;font-weight:800">Ctrl+V</code> can't drop a screenshot into Claude Code. <b>clipwarp</b> fixes it — copy an image anywhere, paste it straight in.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#install">🍑 Get clipwarp</a>
+        <a class="btn btn-ghost" href="#how">See how it works</a>
+      </div>
+      <div class="microcopy">
+        <span>✓ One-command install</span>
+        <span>✓ 100% local</span>
+        <span>✓ MIT &amp; open source</span>
+      </div>
+    </div>
+    <div class="mascot-stage">
+      <div class="mascot-disc"></div>
+      <svg class="mascot" viewBox="0 0 260 260" role="img" aria-label="Warpy, the clipwarp peach mascot"><use href="#peachMascot"/></svg>
+    </div>
+  </div>
+
+  <div class="wrap install" id="install">
+    <h3>Paste this into PowerShell — that's the whole setup 👇</h3>
+    <div class="code">
+      <span class="prompt">PS&gt;</span>
+      <code id="cmd">irm https://raw.githubusercontent.com/botnick/clipwarp/main/install.ps1 | iex</code>
+      <button class="copy" id="copyBtn">Copy</button>
+    </div>
+  </div>
+</header>
+
+<section class="block" id="demo" style="padding-top:34px">
+  <div class="wrap center">
+    <div class="eyebrow">See it in action</div>
+    <h2 style="margin-bottom:20px">Real terminal, real paste 🎬</h2>
+    <div style="border-radius:22px;overflow:hidden;box-shadow:var(--shadow);max-width:980px;margin:0 auto;background:#0a0a0f">
+      <img src="assets/demo.gif" alt="clipwarp demo: installing in PowerShell, then pasting a screenshot into Claude Code with Ctrl+V" style="width:100%;display:block">
+    </div>
+  </div>
+</section>
+
+<section class="block" id="how" style="padding-top:34px">
+  <div class="wrap center">
+    <div class="eyebrow">How it works</div>
+    <h2>Copy → warp → paste ✨</h2>
+    <p class="lead">clipwarp watches your clipboard. The moment an image lands on it, it saves a PNG and quietly puts that file's <b>path</b> on the clipboard as text — which Claude Code happily attaches.</p>
+    <div class="steps">
+      <div class="step"><span class="n">1</span><div class="ico">✂️</div><h3>Copy any image</h3><p>Win+Shift+S, Snipping Tool, Lightshot, ShareX, or “Copy image” in a browser.</p></div>
+      <div class="step"><span class="n">2</span><div class="ico">🍑</div><h3>clipwarp warps it</h3><p>Saves a PNG and swaps the clipboard to its path — automatically, in the background.</p></div>
+      <div class="step"><span class="n">3</span><div class="ico">🎉</div><h3>Ctrl+V in Claude</h3><p>Press paste in Claude Code and the screenshot attaches. No extra steps.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="features" style="padding-top:8px">
+  <div class="wrap">
+    <div class="center">
+      <div class="eyebrow">Why you'll like it</div>
+      <h2>Small tool, zero fuss 🧸</h2>
+    </div>
+    <div class="feat">
+      <div class="card"><div class="badge p">⚡</div><div><h3>Fully automatic</h3><p>Run <code>clipwarp watch</code> once (or <code>autostart</code> at login). Then it's just Ctrl+C → Ctrl+V, forever.</p></div></div>
+      <div class="card"><div class="badge m">🔒</div><div><h3>100% local &amp; private</h3><p>Plain PowerShell + built-in .NET. Your images never touch the network — ever.</p></div></div>
+      <div class="card"><div class="badge g">🖼️</div><div><h3>Reads every format</h3><p>Bitmaps, PNG streams, alpha DIBv5, file copies, browser “Copy image”. Where naive clipboard reads fail, clipwarp doesn't.</p></div></div>
+      <div class="card"><div class="badge b">🪶</div><div><h3>No admin, no deps</h3><p>No services, no installs. Works in Windows Terminal, PowerShell, cmd &amp; the VS Code terminal. PS 5.1 &amp; 7.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" style="padding-top:8px">
+  <div class="wrap">
+    <div class="strip">
+      <div class="eyebrow">Plays nice with</div>
+      <h2 style="margin-top:4px">Whatever you screenshot with</h2>
+      <div class="tools">
+        <span class="chip">Win+Shift+S</span><span class="chip">Snipping Tool</span><span class="chip">Lightshot</span>
+        <span class="chip">ShareX</span><span class="chip">Greenshot</span><span class="chip">PrtScn</span>
+        <span class="chip">Chrome / Firefox</span><span class="chip">Discord</span><span class="chip">Explorer file copy</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block" style="padding-top:8px">
+  <div class="wrap">
+    <div class="final">
+      <svg class="mini" style="width:70px;top:14px;left:20px;transform:rotate(-12deg)" viewBox="0 0 260 260"><use href="#peachMascot"/></svg>
+      <svg class="mini" style="width:56px;bottom:8px;right:22px;transform:rotate(10deg)" viewBox="0 0 260 260"><use href="#peachMascot"/></svg>
+      <div class="eyebrow" style="color:#fff;opacity:.9">Ready in 10 seconds</div>
+      <h2>Give your screenshots a shortcut 🍑</h2>
+      <p>One command, and Ctrl+V just works in Claude Code. Free &amp; open source.</p>
+      <a class="btn btn-ghost" href="https://github.com/botnick/clipwarp">View on GitHub →</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="foot-brand"><svg viewBox="0 0 260 260" aria-hidden="true"><use href="#peachMascot"/></svg> clipwarp</div>
+  <div>Made for <a href="https://claude.com/claude-code">Claude Code</a> on Windows · <a href="https://github.com/botnick/clipwarp">GitHub</a> · MIT License</div>
+  <div style="margin-top:8px;color:#b7a69d;font-size:.9rem">🍑 Meet Warpy — your friendly clipboard peach.</div>
+</footer>
+
+<script>
+  const btn = document.getElementById('copyBtn');
+  btn.addEventListener('click', async () => {
+    const text = document.getElementById('cmd').textContent.trim();
+    try { await navigator.clipboard.writeText(text); }
+    catch (e) {
+      const r = document.createRange(); r.selectNode(document.getElementById('cmd'));
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      try { document.execCommand('copy'); } catch(_){}
+      s.removeAllRanges();
+    }
+    btn.textContent = 'Copied ✓'; btn.classList.add('done');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1800);
+  });
+</script>
+</body>
+</html>
