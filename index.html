@@ -106,7 +106,10 @@
   .note .ic{font-size:1.9rem;flex:none}
   .note h3{font-size:1.15rem;margin-bottom:4px}
   .note p{margin:0;color:#7a674d;font-weight:600}
-  .note code{background:#fff;color:#c8543c;padding:2px 8px;border-radius:7px;font-weight:800;font-size:.9em}
+  .note code{background:#fff;color:#c8543c;padding:2px 8px;border-radius:7px;font-weight:800;font-size:.88em;white-space:nowrap}
+  .note-list{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:8px}
+  .note-list li{background:#fff;border-radius:12px;padding:10px 14px;color:#6d5a52;font-weight:600;box-shadow:0 3px 8px rgba(255,150,80,.10)}
+  .note-do{background:#FFF3DD;border-radius:12px;padding:11px 14px;color:#8a5a2a !important;font-weight:700}
 
   .faq{max-width:820px;margin:28px auto 0;display:flex;flex-direction:column;gap:12px}
   details{background:#fff;border-radius:18px;box-shadow:var(--shadow-sm);padding:4px 20px;transition:.2s}
@@ -277,11 +280,19 @@
   <div class="wrap">
     <div class="note">
       <div class="ic">💡</div>
-      <div>
-        <h3><span data-lang-en>Not using Claude Code right now? Turn the watcher off.</span><span data-lang-th>ไม่ได้ใช้ Claude Code อยู่? ปิด watcher ก่อน</span></h3>
-        <p>
-          <span data-lang-en>While <code>clipwarp watch</code> is running, every copied image also carries its file <b>path</b> as text. Apps that accept images still paste the image — but a plain <b>text</b> box will receive the path instead (e.g. <code>C:\Users\you\.claude\pasted-images\clip-….png</code>). When you're done with Claude Code, run <code>clipwarp stop</code> (and <code>clipwarp unautostart</code> to stop it launching at login).</span>
-          <span data-lang-th>ระหว่างที่ <code>clipwarp watch</code> ทำงาน ทุกครั้งที่ก๊อปรูป clipboard จะพก <b>path</b> ของไฟล์เป็นข้อความไปด้วย แอปที่รับรูปได้จะวางเป็นรูปปกติ — แต่ช่องที่รับเฉพาะ <b>ข้อความ</b> จะได้ path มาแทน (เช่น <code>C:\Users\you\.claude\pasted-images\clip-….png</code>) พอเลิกใช้ Claude Code ให้รัน <code>clipwarp stop</code> (และ <code>clipwarp unautostart</code> เพื่อไม่ให้เปิดเองตอนล็อกอิน)</span>
+      <div style="flex:1">
+        <h3><span data-lang-en>Not using Claude Code? Turn the watcher off.</span><span data-lang-th>ไม่ได้ใช้ Claude Code? ปิด watcher ก่อน</span></h3>
+        <p style="margin-bottom:12px">
+          <span data-lang-en>While the watcher is on, every image you copy also carries its <b>file path</b> as text. So when you paste:</span>
+          <span data-lang-th>ตอนเปิด watcher อยู่ ทุกครั้งที่ก๊อปรูป จะมี <b>path ของไฟล์</b> ติดไปด้วย เวลาวางจึงเป็นแบบนี้:</span>
+        </p>
+        <ul class="note-list">
+          <li>✅ <span data-lang-en><b>Apps that accept images</b> (Claude Code, Word, Discord…) → paste the image, as normal.</span><span data-lang-th><b>แอปที่รับรูปได้</b> (Claude Code, Word, Discord…) → วางเป็นรูปปกติ</span></li>
+          <li>⚠️ <span data-lang-en><b>Plain text boxes</b> → get the path instead, e.g. <code>C:\Users\…\clip-….png</code></span><span data-lang-th><b>ช่องที่รับแค่ข้อความ</b> → จะได้ path มาแทน เช่น <code>C:\Users\…\clip-….png</code></span></li>
+        </ul>
+        <p class="note-do">
+          <span data-lang-en>👉 Done with Claude Code? Run <code>clipwarp stop</code> — and <code>clipwarp unautostart</code> so it won't start at login.</span>
+          <span data-lang-th>👉 เลิกใช้ Claude Code เมื่อไหร่ พิมพ์ <code>clipwarp stop</code> — และ <code>clipwarp unautostart</code> เพื่อไม่ให้เปิดเองตอนล็อกอิน</span>
         </p>
       </div>
     </div>
