@@ -1,32 +1,32 @@
 # clipwarp
 
-Paste clipboard images into **Claude Code on native Windows** — reliably.
+**Paste clipboard images into Claude Code on Windows — fix the broken `Ctrl+V` image paste.**
 
-Claude Code on Windows can't read an image from the clipboard — `Ctrl+V` and
-`Alt+V` silently fail no matter what put the image there (Snipping Tool,
-Lightshot, ShareX, "copy image" in a browser...). See anthropics/claude-code
-issues
-[#22068](https://github.com/anthropics/claude-code/issues/22068),
-[#26679](https://github.com/anthropics/claude-code/issues/26679),
-[#32791](https://github.com/anthropics/claude-code/issues/32791) — still open.
-`Alt+V` only works under WSL, not native Windows.
+[![Windows](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?logo=windows&logoColor=white)](#requirements)
+[![PowerShell](https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE?logo=powershell&logoColor=white)](#requirements)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Install](https://img.shields.io/badge/install-one%20command-blue)](#install)
 
-What **always** works is a file **path** pasted as text: Claude Code auto-attaches
-any `.png` / `.jpg` / `.gif` / `.webp` path in your message. `clipwarp` turns the
-clipboard image into exactly that:
+On **native Windows**, Claude Code cannot read an image from the clipboard.
+`Ctrl+V` and `Alt+V` silently do nothing after you take a screenshot with
+Snipping Tool (`Win+Shift+S`), Lightshot, ShareX, or "Copy image" in a browser —
+a long-standing, still-open problem tracked in
+[anthropics/claude-code#22068](https://github.com/anthropics/claude-code/issues/22068),
+[#26679](https://github.com/anthropics/claude-code/issues/26679) and
+[#32791](https://github.com/anthropics/claude-code/issues/32791)
+(`Alt+V` only works under WSL, not native Windows).
 
-1. reads the clipboard image in whatever format the source app used:
-   * a standard bitmap — Snipping Tool / `Win+Shift+S` (`CF_BITMAP` / `CF_DIB`)
-   * a PNG stream — **Lightshot**, Chrome, Firefox, Discord, ShareX... (`PNG` / `image/png`)
-   * an alpha bitmap — alpha-aware apps (`CF_DIBV5`, decoded manually since GDI+ can't)
-   * an image file copied in Explorer (`CF_HDROP`)
-   * HTML with an embedded `data:` URI or `file:///` src (browser fallback)
-   * plain text that is already a path to an image file
-2. saves it to a PNG under `%USERPROFILE%\.claude\pasted-images` (unless it is already a file),
-3. puts that file path on the clipboard **as text**.
+What *always* works is a file **path** pasted as text: Claude Code auto-attaches
+any `.png` / `.jpg` / `.gif` / `.webp` path it sees in your message. **clipwarp**
+turns whatever image is on your clipboard into exactly that — automatically.
 
-Then `Ctrl+V` in Claude Code pastes the path and the image attaches. Windows
-Terminal pastes text fine, so nothing gets intercepted.
+```text
+┌────────────┐      ┌────────────────────────────┐      ┌───────────────────┐
+│  Ctrl+C /  │ ───▶ │  clipwarp: save clipboard  │ ───▶ │  Ctrl+V in Claude │
+│  Win+⇧+S   │      │  image → PNG, put its path │      │  Code = image     │
+│  anywhere  │      │  on the clipboard as text  │      │  attached ✓       │
+└────────────┘      └────────────────────────────┘      └───────────────────┘
+```
 
 ## Install
 
@@ -43,86 +43,134 @@ git clone https://github.com/botnick/clipwarp
 .\clipwarp\install.ps1
 ```
 
-The installer copies `clipwarp.ps1` to `%USERPROFILE%\.claude\scripts` and registers
-a `clipwarp` function (plus a short `cw` alias) in your all-hosts PowerShell profile. Re-run it any time to
-update. Open a **new** terminal afterwards (or run `. $PROFILE`) so `clipwarp` is
-found.
+The installer copies the scripts to `%USERPROFILE%\.claude\scripts` and registers
+a `clipwarp` function (plus a short `cw` alias) in your all-hosts PowerShell
+profile. Idempotent — re-run any time to update. Open a **new** terminal
+afterwards (or run `. $PROFILE`) so the command is found.
 
-Works in both **Windows PowerShell 5.1** and **PowerShell 7** (clipboard access
-is marshalled onto an STA thread internally).
+No admin rights, no services, no dependencies — plain PowerShell and .NET
+classes that ship with Windows. Everything runs **locally**; images never leave
+your machine.
 
-## Usage
+## Quick start
 
-1. Snip an image — `Win+Shift+S`, Lightshot, ShareX, or copy any image anywhere
-   (or `Ctrl+C` an image file in Explorer).
-2. In a terminal, run:
+### Automatic (recommended): plain `Ctrl+C` → `Ctrl+V`
+
+```powershell
+clipwarp watch       # start the background clipboard watcher once
+clipwarp autostart   # optional: start it at every login
+```
+
+While the watcher runs, **every image that lands on the clipboard is converted
+automatically** — snip, Lightshot, browser "Copy image", `Ctrl+C` on an image
+file in Explorer. Just `Ctrl+V` in Claude Code and the image attaches.
+
+The clipboard is rewritten as **dual format**, so nothing else breaks:
+
+| Paste target | What pastes |
+|---|---|
+| Claude Code / any terminal | the saved PNG's **path** (auto-attaches) |
+| Photoshop, Word, Discord, browser... | the original **image** |
+
+Copies that carry meaningful text alongside an image (e.g. a paragraph from
+Word) are left untouched — only pure image copies convert.
+
+```powershell
+clipwarp status      # is the watcher running?
+clipwarp stop        # stop it
+clipwarp unautostart # remove the login autostart
+```
+
+### Manual: one command per paste
+
+1. Screenshot or copy any image (`Win+Shift+S`, Lightshot, ShareX, browser...).
+2. Run:
    ```powershell
-   clipwarp    # or just: cw
+   cw        # short alias for clipwarp
    ```
-3. Switch to Claude Code and press `Ctrl+V`. The image attaches.
+3. Switch to Claude Code, press `Ctrl+V`. Done.
 
-## Auto mode — plain `Ctrl+C` → `Ctrl+V`
+## Supported clipboard formats
 
-Skip the manual `clipwarp` step entirely:
+clipwarp reads the clipboard in whatever format the source app actually used —
+this is what makes it work where naive `Get-Clipboard -Format Image` fails:
 
-```powershell
-clipwarp watch     # start the background watcher
-clipwarp status    # check it
-clipwarp stop      # stop it
-clipwarp autostart # start it automatically at login (unautostart to undo)
-```
+| Clipboard format | Typical source |
+|---|---|
+| `CF_BITMAP` / `CF_DIB` | Snipping Tool, `Win+Shift+S`, `PrtScn` |
+| `PNG` / `image/png` stream | Lightshot, Chrome, Firefox, Discord, ShareX |
+| `CF_DIBV5` (alpha, BITFIELDS) | alpha-aware apps — decoded manually, since GDI+ can't parse `BITMAPV5HEADER`+`BI_BITFIELDS` |
+| `CF_HDROP` (file copy) | `Ctrl+C` on an image file in Explorer |
+| HTML with `data:` URI / `file:///` src | browser "Copy image" fallback |
+| Plain text that is already an image path | anything |
 
-While the watcher runs, every image that lands on the clipboard (snip, Lightshot,
-browser "copy image", `Ctrl+C` on an image file...) is converted automatically.
-The clipboard is rewritten as **dual format**:
-
-* **text** = the saved PNG's path → `Ctrl+V` in Claude Code attaches the image
-* **image** = the original bitmap → `Ctrl+V` in Photoshop / Word / Discord still
-  pastes the image, so nothing else breaks
-
-Clipboards carrying meaningful text alongside an image (e.g. copying a paragraph
-in Word) are left untouched — only pure image copies convert.
-
-To start the watcher automatically at login:
-
-```powershell
-clipwarp autostart     # registers a hidden Startup shortcut; clipwarp unautostart removes it
-```
+`.bmp` sources are transcoded to PNG (Claude Code doesn't attach `.bmp`).
+Clipboard access is retried through transient locks and guarded by the
+clipboard sequence number, so a slow conversion never overwrites a newer copy.
 
 ## Scripting
 
-`clipwarp` also prints the saved path, so you can use it in scripts:
+`clipwarp` prints the saved path, so it composes:
 
 ```powershell
 $img = clipwarp -Quiet   # -> C:\Users\you\.claude\pasted-images\clip-....png
 ```
 
-Options:
-
 | Flag | Meaning |
-|------|---------|
+|---|---|
 | `-OutDir <path>` | Where to save PNGs (default `%USERPROFILE%\.claude\pasted-images`) |
-| `-Quiet` | Print only the path, no status lines |
+| `-Quiet` | Print only the path |
 | `-KeepImage` | Dual-format write: path as text AND the original image (what the watcher uses) |
 
 Saved PNGs older than 7 days are cleaned up automatically.
 
+## FAQ
+
+**Why doesn't `Ctrl+V` paste images into Claude Code on Windows?**
+Claude Code's terminal UI on native Windows can't read raw bitmaps from the
+Windows clipboard, and `Alt+V` is WSL-only. Screenshots therefore never arrive.
+Pasting a file *path* as text is the documented-by-behavior reliable route —
+clipwarp automates it.
+
+**Does this work with WSL?**
+Under WSL, Claude Code's own `Alt+V` usually works. clipwarp targets **native
+Windows** (Windows Terminal, PowerShell, cmd, VS Code terminal), where nothing
+else does.
+
+**Which tools does it work with?**
+Anything that puts an image on the Windows clipboard: Snipping Tool,
+`Win+Shift+S`, `PrtScn`, Lightshot, ShareX, Greenshot, Flameshot, browser
+"Copy image", Explorer file copies, Photoshop, etc.
+
+**Is anything uploaded anywhere?**
+No. clipwarp is a single local PowerShell script — the image is written to a
+folder in your user profile and its path is put on your clipboard. Nothing
+touches the network.
+
+**Why not hook `Ctrl+V` directly?**
+Claude Code's TUI captures the keyboard, so PSReadLine key bindings can't fire
+while it's focused. Rewriting the clipboard — manually with `cw`, or
+automatically with `clipwarp watch` — is the reliable bridge.
+
+## Requirements
+
+- Windows 10 / 11
+- Windows PowerShell 5.1 (preinstalled) or PowerShell 7 — both supported
+  (clipboard access is marshalled onto an STA thread internally)
+- [Claude Code](https://claude.com/claude-code) running in any native Windows terminal
+
 ## Uninstall
 
 ```powershell
-.\uninstall.ps1              # remove script + profile function
+.\uninstall.ps1              # remove scripts + profile function/alias
 .\uninstall.ps1 -PurgeImages # also delete the saved-images folder
 ```
 
-## Note: why not hook Ctrl+V itself?
+## Contributing
 
-Claude Code's TUI captures the keyboard, so PowerShell key bindings can't fire
-while it is focused, and its own image paste (`Ctrl+V` / `Alt+V`) is broken on
-native Windows for **every** screenshot tool. Rewriting the clipboard — manually
-with `clipwarp`, or automatically with `clipwarp watch` — is the reliable bridge:
-Windows Terminal pastes text fine, and Claude Code attaches any image path it
-sees in the message.
+Issues and PRs welcome — especially reports of clipboard formats from apps that
+still fail (attach the output of `clipwarp` without `-Quiet`).
 
 ## License
 
-MIT
+[MIT](LICENSE)
