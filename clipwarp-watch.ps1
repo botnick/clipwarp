@@ -37,19 +37,28 @@ $logFile    = Join-Path $scriptsDir 'clipwarp-watch.log'
 $clipwarpPath  = Join-Path $PSScriptRoot 'clipwarp.ps1'
 $startupLnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\clipwarp-watch.lnk'
 
-function Get-WatchProcess {
-    if (-not (Test-Path -LiteralPath $pidFile)) { return $null }
+# Tri-state identity for the pid in the pid file, so a reused/stale PID can never
+# be mistaken for the watcher AND a verifiably-live-but-unreadable process is not
+# mistaken for "gone":
+#   none    - no pid file, or the process is not alive
+#   watcher - a live process whose command line is exactly our daemon (script + -Daemon)
+#   foreign - a live process that is verifiably NOT our daemon (name mismatch, or
+#             command line read OK but doesn't match)
+#   unknown - a live powershell/pwsh whose command line could not be read (CIM failed)
+# Callers must REFUSE to stop/delete on 'unknown'.
+function Get-WatchState {
+    if (-not (Test-Path -LiteralPath $pidFile)) { return @{ State = 'none'; Pid = $null } }
     $watchPid = 0
-    if (-not [int]::TryParse((Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1), [ref]$watchPid)) { return $null }
+    if (-not [int]::TryParse((Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1), [ref]$watchPid)) { return @{ State = 'none'; Pid = $null } }
     $proc = Get-Process -Id $watchPid -ErrorAction SilentlyContinue
-    if (-not ($proc -and $proc.ProcessName -match 'powershell|pwsh')) { return $null }
-    # Guard against a reused PID: only treat it as our watcher if the command line
-    # is actually running clipwarp-watch (a stale pid file must never target an
-    # unrelated shell). If the command line can't be read, err on the safe side.
-    $cmd = $null
-    try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$watchPid" -ErrorAction SilentlyContinue).CommandLine } catch {}
-    if ($cmd -match 'clipwarp-watch') { return $proc }
-    return $null
+    if (-not $proc) { return @{ State = 'none'; Pid = $watchPid } }
+    if ($proc.ProcessName -notmatch 'powershell|pwsh') { return @{ State = 'foreign'; Pid = $watchPid } }
+    $cmd = $null; $cimOk = $true
+    try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$watchPid" -ErrorAction Stop).CommandLine }
+    catch { $cimOk = $false }
+    if (-not $cimOk -or $null -eq $cmd) { return @{ State = 'unknown'; Pid = $watchPid } }
+    if (($cmd -match 'clipwarp-watch\.ps1') -and ($cmd -match '(^|\s)-Daemon(\s|$)')) { return @{ State = 'watcher'; Pid = $watchPid } }
+    return @{ State = 'foreign'; Pid = $watchPid }
 }
 
 if ($Autostart) {
@@ -76,39 +85,59 @@ if ($NoAutostart) {
 }
 
 if ($Status) {
-    $proc = Get-WatchProcess
+    $st = Get-WatchState
     $auto = if (Test-Path -LiteralPath $startupLnk) { 'on' } else { 'off' }
-    if ($proc) { Write-Host "clipwarp watch: running (pid $($proc.Id)) - autostart $auto" -ForegroundColor Green; exit 0 }
-    Write-Host "clipwarp watch: not running - autostart $auto" -ForegroundColor Yellow
-    exit 1
+    switch ($st.State) {
+        'watcher' { Write-Host "clipwarp watch: running (pid $($st.Pid)) - autostart $auto" -ForegroundColor Green; exit 0 }
+        'unknown' { Write-Host "clipwarp watch: unknown - a shell at pid $($st.Pid) could not be verified (autostart $auto)" -ForegroundColor Yellow; exit 2 }
+        default   { Write-Host "clipwarp watch: not running - autostart $auto" -ForegroundColor Yellow; exit 1 }
+    }
 }
 
 if ($Stop) {
-    $proc = Get-WatchProcess
-    if ($proc) {
-        Stop-Process -Id $proc.Id -Force
-        Write-Host "clipwarp watch: stopped (pid $($proc.Id))" -ForegroundColor Green
+    $st = Get-WatchState
+    switch ($st.State) {
+        'watcher' {
+            try { Stop-Process -Id $st.Pid -Force -ErrorAction Stop }
+            catch { Write-Host "clipwarp watch: failed to stop pid $($st.Pid) - $($_.Exception.Message)" -ForegroundColor Red; exit 1 }
+            Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+            Write-Host "clipwarp watch: stopped (pid $($st.Pid))" -ForegroundColor Green
+            exit 0
+        }
+        'unknown' {
+            # A real watcher might be live; never kill blindly or clear its pid file.
+            Write-Host "clipwarp watch: could not verify the process at pid $($st.Pid) - refusing to stop. Try again, or end it manually." -ForegroundColor Yellow
+            exit 1
+        }
+        default {
+            # none / foreign: our watcher is not running; clear a stale pid file.
+            Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+            Write-Host 'clipwarp watch: not running' -ForegroundColor Yellow
+            exit 0
+        }
     }
-    else { Write-Host 'clipwarp watch: not running' -ForegroundColor Yellow }
-    Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
-    exit 0
 }
 
 if (-not $Daemon) {
     # Start mode: spawn a hidden daemon and return.
-    $proc = Get-WatchProcess
-    if ($proc) { Write-Host "clipwarp watch: already running (pid $($proc.Id))" -ForegroundColor DarkGray; exit 0 }
+    $st = Get-WatchState
+    if ($st.State -eq 'watcher') { Write-Host "clipwarp watch: already running (pid $($st.Pid))" -ForegroundColor DarkGray; exit 0 }
+    if ($st.State -eq 'unknown') {
+        Write-Host "clipwarp watch: a shell at pid $($st.Pid) could not be verified; not starting a second watcher. Run 'clipwarp stop' or end it manually first." -ForegroundColor Yellow
+        exit 1
+    }
     Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(
         '-NoProfile', '-Sta', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
         '-File', "`"$($MyInvocation.MyCommand.Path)`"", '-Daemon'
     ) | Out-Null
+    $started = $false
     foreach ($i in 1..20) {
         Start-Sleep -Milliseconds 250
-        $proc = Get-WatchProcess
-        if ($proc) { break }
+        $st = Get-WatchState
+        if ($st.State -eq 'watcher') { $started = $true; break }
     }
-    if ($proc) {
-        Write-Host "clipwarp watch: started (pid $($proc.Id))" -ForegroundColor Green
+    if ($started) {
+        Write-Host "clipwarp watch: started (pid $($st.Pid))" -ForegroundColor Green
         Write-Host 'copy an image anywhere (Ctrl+C / snip), then Ctrl+V in Claude Code.' -ForegroundColor Cyan
         Write-Host "stop with: clipwarp stop" -ForegroundColor DarkGray
         exit 0

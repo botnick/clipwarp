@@ -17,18 +17,25 @@ $pidFile     = Join-Path $scriptsDir 'clipwarp-watch.pid'
 $startupLnk  = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\clipwarp-watch.lnk'
 $problems    = @()
 
-function Get-WatcherPid {
-    # Returns the PID only if the pid file points at a live process whose command
-    # line is actually clipwarp-watch (never a reused PID on an unrelated shell).
-    if (-not (Test-Path -LiteralPath $pidFile)) { return $null }
+function Get-WatcherState {
+    # Tri-state so a reused/stale PID is never killed and a live-but-unverifiable
+    # process is never mistaken for gone:
+    #   none    - no pid file / process not alive
+    #   watcher - live process whose command line is exactly our daemon (+ -Daemon)
+    #   foreign - live process verifiably NOT our daemon
+    #   unknown - live powershell/pwsh whose command line couldn't be read (CIM failed)
+    if (-not (Test-Path -LiteralPath $pidFile)) { return @{ State = 'none'; Pid = $null } }
     $wp = 0
-    if (-not [int]::TryParse((Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1), [ref]$wp)) { return $null }
+    if (-not [int]::TryParse((Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1), [ref]$wp)) { return @{ State = 'none'; Pid = $null } }
     $p = Get-Process -Id $wp -ErrorAction SilentlyContinue
-    if (-not ($p -and $p.ProcessName -match 'powershell|pwsh')) { return $null }
-    $cmd = $null
-    try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$wp" -ErrorAction SilentlyContinue).CommandLine } catch {}
-    if ($cmd -match 'clipwarp-watch') { return $wp }
-    return $null
+    if (-not $p) { return @{ State = 'none'; Pid = $wp } }
+    if ($p.ProcessName -notmatch 'powershell|pwsh') { return @{ State = 'foreign'; Pid = $wp } }
+    $cmd = $null; $cimOk = $true
+    try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$wp" -ErrorAction Stop).CommandLine }
+    catch { $cimOk = $false }
+    if (-not $cimOk -or $null -eq $cmd) { return @{ State = 'unknown'; Pid = $wp } }
+    if (($cmd -match 'clipwarp-watch\.ps1') -and ($cmd -match '(^|\s)-Daemon(\s|$)')) { return @{ State = 'watcher'; Pid = $wp } }
+    return @{ State = 'foreign'; Pid = $wp }
 }
 
 # 1. Stop the watcher and disable autostart (needs the watcher script present).
@@ -36,11 +43,17 @@ if (Test-Path -LiteralPath $watchScript) {
     try { & $watchScript -Stop        | Out-Null } catch { $problems += "stop watcher: $($_.Exception.Message)" }
     try { & $watchScript -NoAutostart | Out-Null } catch { $problems += "disable autostart: $($_.Exception.Message)" }
 }
-# Verify it actually stopped; force-kill the verified watcher pid as a fallback.
-$wpid = Get-WatcherPid
-if ($wpid) {
-    try { Stop-Process -Id $wpid -Force -ErrorAction Stop } catch { $problems += "kill watcher pid ${wpid}: $($_.Exception.Message)" }
-    if (Get-WatcherPid) { $problems += "watcher is still running (pid file: $pidFile)" }
+# Verify it actually stopped; force-kill only the VERIFIED watcher pid as a fallback.
+# On 'unknown' (a live shell we can't verify) refuse and keep everything, so we never
+# delete the scripts out from under a clipboard watcher that may still be live.
+$state = Get-WatcherState
+if ($state.State -eq 'watcher') {
+    try { Stop-Process -Id $state.Pid -Force -ErrorAction Stop } catch { $problems += "kill watcher pid $($state.Pid): $($_.Exception.Message)" }
+    $state = Get-WatcherState
+    if ($state.State -eq 'watcher') { $problems += "watcher is still running (pid file: $pidFile)" }
+}
+if ($state.State -eq 'unknown') {
+    $problems += "could not verify the process at pid $($state.Pid) (pid file: $pidFile) - refusing to touch it; re-run once it can be verified"
 }
 
 # 2. Remove the login-autostart shortcut directly (in case the script was gone).
