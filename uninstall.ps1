@@ -21,10 +21,13 @@ $problems    = @()
 # (a UTF-16/BOM profile must not be flattened to UTF-8). Defaults to UTF-8 no BOM.
 function Get-FileEncoding([string]$Path) {
     try { $b = [System.IO.File]::ReadAllBytes($Path) } catch { return (New-Object System.Text.UTF8Encoding($false)) }
+    if ($b.Length -ge 4 -and $b[0] -eq 0xFF -and $b[1] -eq 0xFE -and $b[2] -eq 0x00 -and $b[3] -eq 0x00) { return (New-Object System.Text.UTF32Encoding($false, $true)) }
+    if ($b.Length -ge 4 -and $b[0] -eq 0x00 -and $b[1] -eq 0x00 -and $b[2] -eq 0xFE -and $b[3] -eq 0xFF) { return (New-Object System.Text.UTF32Encoding($true, $true)) }
     if ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF) { return (New-Object System.Text.UTF8Encoding($true)) }
     if ($b.Length -ge 2 -and $b[0] -eq 0xFF -and $b[1] -eq 0xFE) { return [System.Text.Encoding]::Unicode }
     if ($b.Length -ge 2 -and $b[0] -eq 0xFE -and $b[1] -eq 0xFF) { return [System.Text.Encoding]::BigEndianUnicode }
-    return (New-Object System.Text.UTF8Encoding($false))
+    try { [void](New-Object System.Text.UTF8Encoding($false, $true)).GetString($b); return (New-Object System.Text.UTF8Encoding($false)) }
+    catch { return [System.Text.Encoding]::GetEncoding(0) }   # system default ANSI code page
 }
 
 $startMark = '# >>> clipwarp (Claude Code image paste helper) >>>'
@@ -88,7 +91,7 @@ foreach ($profilePath in $profilePaths) {
     $tmp = "$profilePath.clipwarp.tmp"
     try {
         $enc   = Get-FileEncoding $profilePath
-        $lines = @([System.IO.File]::ReadAllLines($profilePath))
+        $lines = @([System.IO.File]::ReadAllLines($profilePath, $enc))
         # Require a COMPLETE, EXACT start/end marker pair before mutating anything -
         # never delete from the start marker to EOF if the closing marker is missing.
         $startIdx = -1; $endIdx = -1

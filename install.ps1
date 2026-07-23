@@ -18,20 +18,26 @@ try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::
 $RawBaseUrl = if ($env:CLIPWARP_RAW_BASE) { $env:CLIPWARP_RAW_BASE } else { 'https://raw.githubusercontent.com/botnick/clipwarp/main' }
 $scriptsDir = Join-Path $HOME '.claude\scripts'
 
-# Detect a file's encoding from its BOM so an existing profile is rewritten
-# unchanged (never flatten a UTF-16/BOM profile to UTF-8). Defaults to UTF-8 no BOM.
+# Detect a text file's encoding so an existing profile is rewritten unchanged:
+# UTF-32/UTF-16/UTF-8 by BOM, then strict-UTF-8 for a no-BOM file, else the system
+# ANSI code page (common for legacy Windows PowerShell profiles). Never decode ANSI
+# bytes as UTF-8 (that would replace them with U+FFFD).
 function Get-FileEncoding([string]$Path) {
     try { $b = [System.IO.File]::ReadAllBytes($Path) } catch { return (New-Object System.Text.UTF8Encoding($false)) }
+    if ($b.Length -ge 4 -and $b[0] -eq 0xFF -and $b[1] -eq 0xFE -and $b[2] -eq 0x00 -and $b[3] -eq 0x00) { return (New-Object System.Text.UTF32Encoding($false, $true)) }
+    if ($b.Length -ge 4 -and $b[0] -eq 0x00 -and $b[1] -eq 0x00 -and $b[2] -eq 0xFE -and $b[3] -eq 0xFF) { return (New-Object System.Text.UTF32Encoding($true, $true)) }
     if ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF) { return (New-Object System.Text.UTF8Encoding($true)) }
     if ($b.Length -ge 2 -and $b[0] -eq 0xFF -and $b[1] -eq 0xFE) { return [System.Text.Encoding]::Unicode }
     if ($b.Length -ge 2 -and $b[0] -eq 0xFE -and $b[1] -eq 0xFF) { return [System.Text.Encoding]::BigEndianUnicode }
-    return (New-Object System.Text.UTF8Encoding($false))
+    try { [void](New-Object System.Text.UTF8Encoding($false, $true)).GetString($b); return (New-Object System.Text.UTF8Encoding($false)) }
+    catch { return [System.Text.Encoding]::GetEncoding(0) }   # system default ANSI code page
 }
 
-# --- 1. Install the scripts: stage all to temp, then swap in with backup+rollback. ---
-$files   = @('clipwarp.ps1', 'clipwarp-watch.ps1', 'uninstall.ps1')
-$staged  = @{}
-$backups = @{}
+# --- 1. Install the scripts: stage all to temp, then swap in with backup/rollback. ---
+$files    = @('clipwarp.ps1', 'clipwarp-watch.ps1', 'uninstall.ps1')
+$staged   = @{}
+$backups  = @{}   # name -> backup path (targets that existed before)
+$created  = @()   # target paths that did NOT exist before (delete these on rollback)
 try {
     New-Item -ItemType Directory -Force -Path $scriptsDir -ErrorAction Stop | Out-Null
     foreach ($name in $files) {
@@ -51,6 +57,7 @@ try {
             Copy-Item -LiteralPath $target -Destination "$target.bak" -Force -ErrorAction Stop
             $backups[$name] = "$target.bak"
         }
+        else { $created += $target }
         Move-Item -LiteralPath $staged[$name] -Destination $target -Force -ErrorAction Stop
         Write-Host "installed $name" -ForegroundColor Green
     }
@@ -58,11 +65,18 @@ try {
 }
 catch {
     $err = $_.Exception.Message
+    $rollbackOk = $true
+    foreach ($t in $created) {
+        try { if (Test-Path -LiteralPath $t) { Remove-Item -LiteralPath $t -Force -ErrorAction Stop } }
+        catch { $rollbackOk = $false }
+    }
     foreach ($name in $backups.Keys) {
-        Move-Item -LiteralPath $backups[$name] -Destination (Join-Path $scriptsDir $name) -Force -ErrorAction SilentlyContinue
+        try { Move-Item -LiteralPath $backups[$name] -Destination (Join-Path $scriptsDir $name) -Force -ErrorAction Stop }
+        catch { $rollbackOk = $false; Write-Host "  kept backup: $($backups[$name])" -ForegroundColor Yellow }
     }
     foreach ($t in $staged.Values) { Remove-Item -LiteralPath $t -Force -ErrorAction SilentlyContinue }
-    Write-Host "clipwarp: install failed - $err. Rolled back; no files were changed." -ForegroundColor Red
+    if ($rollbackOk) { Write-Host "clipwarp: install failed - $err. Rolled back; no files were changed." -ForegroundColor Red }
+    else { Write-Host "clipwarp: install failed - $err. Rollback INCOMPLETE - the install may be inconsistent; *.bak backups were kept." -ForegroundColor Red }
     exit 1
 }
 
@@ -82,22 +96,26 @@ if     ($cur -match '\\WindowsPowerShell\\profile\.ps1$') { $profilePaths += ($c
 elseif ($cur -match '\\PowerShell\\profile\.ps1$')        { $profilePaths += ($cur -replace '\\PowerShell\\profile\.ps1$', '\WindowsPowerShell\profile.ps1') }
 $profilePaths = $profilePaths | Select-Object -Unique
 
-$profileFailures = @()
+$problems = @()
 foreach ($profilePath in $profilePaths) {
     try {
         $profileDir = Split-Path $profilePath
         if (-not (Test-Path $profileDir)) { New-Item -ItemType Directory -Force -Path $profileDir -ErrorAction Stop | Out-Null }
         $existed = Test-Path -LiteralPath $profilePath
-        $content = if ($existed) { [System.IO.File]::ReadAllText($profilePath) } else { '' }
+        if ($existed) { $enc = Get-FileEncoding $profilePath; $content = [System.IO.File]::ReadAllText($profilePath, $enc) }
+        else          { $enc = New-Object System.Text.UTF8Encoding($false); $content = '' }
         if ($content.Contains($startMark)) {
             Write-Host "profile already registers clipwarp -> $profilePath" -ForegroundColor DarkGray
             continue
         }
-        $enc = if ($existed -and $content.Length -gt 0) { Get-FileEncoding $profilePath } else { New-Object System.Text.UTF8Encoding($false) }
         [System.IO.File]::WriteAllText($profilePath, ($content + $block), $enc)
         Write-Host "registered clipwarp function -> $profilePath" -ForegroundColor Green
     }
-    catch { $profileFailures += "${profilePath}: $($_.Exception.Message)" }
+    catch {
+        $msg = "profile ${profilePath}: $($_.Exception.Message)"
+        $problems += $msg
+        if ($profilePath -eq $cur) { $problems += "current-edition-profile-failed" }
+    }
 }
 
 # --- 3. Load into the current session so it works immediately. ---
@@ -106,20 +124,36 @@ try { . $cur } catch {}
 # --- 4. If a watcher was already running (an update), restart it on the new script. ---
 $installedWatch = Join-Path $scriptsDir 'clipwarp-watch.ps1'
 & $installedWatch -Status *> $null
-if ($LASTEXITCODE -eq 0) {
+$watchState = $LASTEXITCODE
+if ($watchState -eq 2) {
+    $problems += "a running watcher could not be verified - it was NOT restarted, so it may still run the old version. Stop it manually and run 'clipwarp watch'."
+}
+elseif ($watchState -eq 0) {
     & $installedWatch -Stop *> $null
-    & $installedWatch     *> $null
-    Write-Host "restarted the running watcher on the updated version" -ForegroundColor Green
+    if ($LASTEXITCODE -ne 0) {
+        $problems += "could not stop the running watcher to update it - it may still run the old version."
+    }
+    else {
+        & $installedWatch *> $null
+        $startCode = $LASTEXITCODE
+        & $installedWatch -Status *> $null
+        if ($startCode -eq 0 -and $LASTEXITCODE -eq 0) { Write-Host "restarted the running watcher on the updated version" -ForegroundColor Green }
+        else { $problems += "the watcher was stopped but did not restart - run 'clipwarp watch' to resume auto mode." }
+    }
 }
 
+# --- 5. Honest summary. ---
 Write-Host ""
-if ($profileFailures.Count -gt 0) {
-    Write-Host "clipwarp: some profiles could not be updated:" -ForegroundColor Yellow
-    $profileFailures | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
-    if ($profileFailures -match [regex]::Escape($cur)) {
+$currentEditionBroke = $problems -contains 'current-edition-profile-failed'
+$problems = $problems | Where-Object { $_ -ne 'current-edition-profile-failed' }
+if ($problems.Count -gt 0) {
+    Write-Host "clipwarp installed, but with problems:" -ForegroundColor Yellow
+    $problems | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
+    if ($currentEditionBroke) {
         Write-Host "The 'clipwarp' command may be unavailable in this edition until that profile is fixed." -ForegroundColor Yellow
         exit 1
     }
+    exit 1
 }
 
 Write-Host "clipwarp installed. Usage:" -ForegroundColor Cyan
