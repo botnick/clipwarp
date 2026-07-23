@@ -80,17 +80,23 @@ $work = {
 
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
-    Add-Type -Namespace ClipwarpNative -Name Clip -MemberDefinition @'
+    # Guard the compiled helpers: types live in the process AppDomain, so running
+    # clipwarp twice in one PS 5.1 session would otherwise throw "type already
+    # exists" - which, now that we read Streams.Error, would be misreported.
+    if (-not ([System.Management.Automation.PSTypeName]'ClipwarpNative.Clip').Type) {
+        Add-Type -Namespace ClipwarpNative -Name Clip -MemberDefinition @'
 [System.Runtime.InteropServices.DllImport("user32.dll")]
 public static extern uint GetClipboardSequenceNumber();
 '@
+    }
 
     # General BITFIELDS decoder: map arbitrary R/G/B/A channel masks into BGRA.
     # Used for the (rare) non-canonical 32bpp case that neither the fast memcpy
     # path nor GDI+ (which can't parse BITMAPV5HEADER+BITFIELDS) handles. Written
     # in C# to avoid a slow per-pixel PowerShell loop; no C#7 features so it
     # compiles under Windows PowerShell 5.1's bundled compiler too.
-    Add-Type -Namespace ClipwarpNative -Name Dib -MemberDefinition @'
+    if (-not ([System.Management.Automation.PSTypeName]'ClipwarpNative.Dib').Type) {
+        Add-Type -Namespace ClipwarpNative -Name Dib -MemberDefinition @'
 public static int Shift(uint m){ if(m==0)return 0; int s=0; while(((m>>s)&1)==0)s++; return s; }
 public static int Width(uint m){ int c=0; while(m!=0){ c+=(int)(m&1u); m>>=1; } return c; }
 public static byte[] DecodeMasked(byte[] dib, int srcOff, int w, int absH, int stride, bool bottomUp, uint rM, uint gM, uint bM, uint aM){
@@ -115,6 +121,7 @@ public static byte[] DecodeMasked(byte[] dib, int srcOff, int w, int absH, int s
     return outb;
 }
 '@
+    }
 
     # Snapshot the clipboard's change counter now. If it changes before we
     # publish (a newer image was copied while we were converting - the watcher's

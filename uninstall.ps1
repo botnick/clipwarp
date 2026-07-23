@@ -17,6 +17,19 @@ $pidFile     = Join-Path $scriptsDir 'clipwarp-watch.pid'
 $startupLnk  = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\clipwarp-watch.lnk'
 $problems    = @()
 
+# Detect a text file's encoding from its BOM so we can rewrite it unchanged
+# (a UTF-16/BOM profile must not be flattened to UTF-8). Defaults to UTF-8 no BOM.
+function Get-FileEncoding([string]$Path) {
+    try { $b = [System.IO.File]::ReadAllBytes($Path) } catch { return (New-Object System.Text.UTF8Encoding($false)) }
+    if ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF) { return (New-Object System.Text.UTF8Encoding($true)) }
+    if ($b.Length -ge 2 -and $b[0] -eq 0xFF -and $b[1] -eq 0xFE) { return [System.Text.Encoding]::Unicode }
+    if ($b.Length -ge 2 -and $b[0] -eq 0xFE -and $b[1] -eq 0xFF) { return [System.Text.Encoding]::BigEndianUnicode }
+    return (New-Object System.Text.UTF8Encoding($false))
+}
+
+$startMark = '# >>> clipwarp (Claude Code image paste helper) >>>'
+$endMark   = '# <<< clipwarp <<<'
+
 function Get-WatcherState {
     # Tri-state so a reused/stale PID is never killed and a live-but-unverifiable
     # process is never mistaken for gone:
@@ -29,13 +42,13 @@ function Get-WatcherState {
     if (-not [int]::TryParse((Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1), [ref]$wp)) { return @{ State = 'none'; Pid = $null } }
     $p = Get-Process -Id $wp -ErrorAction SilentlyContinue
     if (-not $p) { return @{ State = 'none'; Pid = $wp } }
-    if ($p.ProcessName -notmatch 'powershell|pwsh') { return @{ State = 'foreign'; Pid = $wp } }
+    if ($p.ProcessName -notin @('powershell','pwsh')) { return @{ State = 'foreign'; Pid = $wp } }
     $cmd = $null; $cimOk = $true
     try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$wp" -ErrorAction Stop).CommandLine }
     catch { $cimOk = $false }
     if (-not $cimOk -or $null -eq $cmd) { return @{ State = 'unknown'; Pid = $wp } }
-    $selfEsc = [regex]::Escape($watchScript)
-    if (($cmd -match $selfEsc) -and ($cmd -match '(^|\s)-Daemon(\s|$)')) { return @{ State = 'watcher'; Pid = $wp } }
+    $fileRe = '-File\s+"?' + [regex]::Escape($watchScript) + '"?(\s|$)'
+    if (($cmd -match $fileRe) -and ($cmd -match '(^|\s)-Daemon(\s|$)')) { return @{ State = 'watcher'; Pid = $wp } }
     return @{ State = 'foreign'; Pid = $wp }
 }
 
@@ -74,13 +87,14 @@ foreach ($profilePath in $profilePaths) {
     if (-not (Test-Path -LiteralPath $profilePath)) { continue }
     $tmp = "$profilePath.clipwarp.tmp"
     try {
-        $lines = @(Get-Content -LiteralPath $profilePath -ErrorAction Stop)
-        # Require a COMPLETE start/end marker pair before mutating anything - never
-        # delete from the start marker to EOF if the closing marker is missing.
+        $enc   = Get-FileEncoding $profilePath
+        $lines = @([System.IO.File]::ReadAllLines($profilePath))
+        # Require a COMPLETE, EXACT start/end marker pair before mutating anything -
+        # never delete from the start marker to EOF if the closing marker is missing.
         $startIdx = -1; $endIdx = -1
         for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($startIdx -lt 0 -and $lines[$i] -match '^\s*# >>> clipwarp') { $startIdx = $i; continue }
-            if ($startIdx -ge 0 -and $lines[$i] -match '^\s*# <<< clipwarp') { $endIdx = $i; break }
+            if ($startIdx -lt 0 -and $lines[$i].Trim() -eq $startMark) { $startIdx = $i; continue }
+            if ($startIdx -ge 0 -and $lines[$i].Trim() -eq $endMark)   { $endIdx = $i; break }
         }
         if ($startIdx -lt 0) { continue }                       # no clipwarp block here
         if ($endIdx -lt 0) {
@@ -90,8 +104,8 @@ foreach ($profilePath in $profilePaths) {
         $kept = @()
         if ($startIdx -gt 0)               { $kept += $lines[0..($startIdx - 1)] }
         if ($endIdx -lt ($lines.Count - 1)) { $kept += $lines[($endIdx + 1)..($lines.Count - 1)] }
-        # Write a same-directory temp preserving encoding, then atomically replace.
-        Set-Content -LiteralPath $tmp -Value $kept -Encoding UTF8 -ErrorAction Stop
+        # Write a same-directory temp in the ORIGINAL encoding, then atomically replace.
+        [System.IO.File]::WriteAllLines($tmp, [string[]]$kept, $enc)
         Move-Item -LiteralPath $tmp -Destination $profilePath -Force -ErrorAction Stop
         Write-Host "removed clipwarp function from $profilePath" -ForegroundColor Green
     }

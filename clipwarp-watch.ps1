@@ -8,7 +8,7 @@
     "copy image", Ctrl+C on an image file - it runs clipwarp.ps1 -KeepImage, which
     rewrites the clipboard as DUAL format:
 
-        text  = the saved PNG's path   -> Ctrl+V in Claude Code attaches the image
+        text  = the saved image path   -> Ctrl+V in Claude Code attaches the image
         image = the original bitmap    -> Ctrl+V in Photoshop/Word still pastes the image
 
     So with the watcher running the flow is just: Ctrl+C anywhere -> Ctrl+V in
@@ -52,13 +52,16 @@ function Get-WatchState {
     if (-not [int]::TryParse((Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1), [ref]$watchPid)) { return @{ State = 'none'; Pid = $null } }
     $proc = Get-Process -Id $watchPid -ErrorAction SilentlyContinue
     if (-not $proc) { return @{ State = 'none'; Pid = $watchPid } }
-    if ($proc.ProcessName -notmatch 'powershell|pwsh') { return @{ State = 'foreign'; Pid = $watchPid } }
+    if ($proc.ProcessName -notin @('powershell','pwsh')) { return @{ State = 'foreign'; Pid = $watchPid } }
     $cmd = $null; $cimOk = $true
     try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$watchPid" -ErrorAction Stop).CommandLine }
     catch { $cimOk = $false }
     if (-not $cimOk -or $null -eq $cmd) { return @{ State = 'unknown'; Pid = $watchPid } }
-    $selfEsc = [regex]::Escape($PSCommandPath)
-    if (($cmd -match $selfEsc) -and ($cmd -match '(^|\s)-Daemon(\s|$)')) { return @{ State = 'watcher'; Pid = $watchPid } }
+    # Match our script only as the -File argument (not merely anywhere in the line)
+    # AND require the -Daemon flag, so `powershell -File other.ps1 <ourpath> -Daemon`
+    # is not mistaken for the daemon.
+    $fileRe = '-File\s+"?' + [regex]::Escape($PSCommandPath) + '"?(\s|$)'
+    if (($cmd -match $fileRe) -and ($cmd -match '(^|\s)-Daemon(\s|$)')) { return @{ State = 'watcher'; Pid = $watchPid } }
     return @{ State = 'foreign'; Pid = $watchPid }
 }
 
@@ -233,7 +236,7 @@ namespace ClipwarpWatch
         {
             debounce.Stop();
             try { Inspect(); }
-            catch (Exception ex) { Log("error: " + ex.Message); debounce.Interval = 500; debounce.Start(); }  // don't wedge on a launch/read exception
+            catch (Exception ex) { Log("error: " + ex.Message); convFails++; if (convFails < 3) { debounce.Interval = 500; debounce.Start(); } }  // bounded retry, then wait for a new copy
         }
 
         private void Inspect()

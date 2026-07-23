@@ -79,7 +79,7 @@ The clipboard is rewritten as **dual format**, so nothing else breaks:
 
 | Paste target | What pastes |
 |---|---|
-| Claude Code / any terminal | the saved PNG's **path** (auto-attaches) |
+| Claude Code / any terminal | the saved image's **path** (auto-attaches) |
 | Photoshop, Word, Discord, a browser… | the original **image** |
 
 Copies that carry meaningful text alongside an image (e.g. a paragraph from Word)
