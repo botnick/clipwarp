@@ -38,7 +38,7 @@ function Get-FileEncoding([string]$Path) {
         try { return [System.Text.Encoding]::GetEncoding($cp) }
         catch {
             try { [System.Text.Encoding]::RegisterProvider([System.Text.CodePagesEncodingProvider]::Instance); return [System.Text.Encoding]::GetEncoding($cp) }
-            catch { return (New-Object System.Text.UTF8Encoding($false)) }
+            catch { throw "cannot load the system ANSI code page ($cp) to preserve this profile's encoding - leaving it unchanged" }
         }
     }
 }
