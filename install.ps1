@@ -30,7 +30,17 @@ function Get-FileEncoding([string]$Path) {
     if ($b.Length -ge 2 -and $b[0] -eq 0xFF -and $b[1] -eq 0xFE) { return [System.Text.Encoding]::Unicode }
     if ($b.Length -ge 2 -and $b[0] -eq 0xFE -and $b[1] -eq 0xFF) { return [System.Text.Encoding]::BigEndianUnicode }
     try { [void](New-Object System.Text.UTF8Encoding($false, $true)).GetString($b); return (New-Object System.Text.UTF8Encoding($false)) }
-    catch { return [System.Text.Encoding]::GetEncoding(0) }   # system default ANSI code page
+    catch {
+        # Not valid UTF-8 -> legacy ANSI. GetEncoding(0) is ANSI only on .NET Framework
+        # (PS 5.1); on .NET/PS 7 it is UTF-8, so ask for the actual ANSI code page and
+        # register the code-pages provider (.NET Core needs it for CP125x).
+        $cp = [System.Globalization.CultureInfo]::CurrentCulture.TextInfo.ANSICodePage
+        try { return [System.Text.Encoding]::GetEncoding($cp) }
+        catch {
+            try { [System.Text.Encoding]::RegisterProvider([System.Text.CodePagesEncodingProvider]::Instance); return [System.Text.Encoding]::GetEncoding($cp) }
+            catch { return (New-Object System.Text.UTF8Encoding($false)) }
+        }
+    }
 }
 
 # --- 1. Install the scripts: stage all to temp, then swap in with backup/rollback. ---
